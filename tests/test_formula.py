@@ -10,9 +10,22 @@ def X_y_sample_1():
     y = np.array([1,0,1], dtype=bool)
     return X, y
 
-def test_ochai():
+def test_get_spectrum():
     X, y = X_y_sample_1()
 
+    ochiai = Ochiai()
+    e_p, n_p, e_f, n_f = ochiai.get_spectrum(X, y)
+
+    num_passings = y.sum()
+    num_failings = np.invert(y).sum()
+
+    assert e_p[0] == 2 and e_p[1] == 1 and e_p[2] == 1
+    assert e_f[0] == 0 and e_f[1] == 0 and e_f[2] == 1
+    assert np.all(e_p + n_p == num_passings)
+    assert np.all(e_f + n_f == num_failings)
+
+def test_ochai():
+    X, y = X_y_sample_1()
     ochiai = Ochiai()
     ochiai.fit(X, y)
     scores = ochiai.scores_
