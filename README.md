@@ -11,5 +11,11 @@
 
 ## Run tests
 ```bash
+# without measuring coverage
 python -m pytest
+
+# with measuring coverage
+python -m pip install coverage
+python -m coverage run --source=sbfl -m pytest
+python -m coverage report
 ```
