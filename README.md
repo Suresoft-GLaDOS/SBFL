@@ -2,12 +2,20 @@
 
 [![test](https://github.com/Suresoft-GLaDOS/SBFL/actions/workflows/run_tests.yml/badge.svg)](https://github.com/Suresoft-GLaDOS/SBFL/actions/workflows/run_tests.yml)
 
+⚠️ This engine is under construction.👷‍♀️
+
 ## Environment
 - Tested under Python 3.9.1
-- Install dependencies
+- Installing dependencies:
   ```bash
   python -m pip install -r requirements.txt
   ```
+
+## Getting Started
+See the example usage of this engine in [./main.py](./main.py).
+```bash
+python main.py
+```
 
 ## Run tests
 ```bash

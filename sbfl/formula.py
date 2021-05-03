@@ -45,6 +45,6 @@ class SBFLFormula(ABC):
 
 class Ochiai(SBFLFormula):
     def fit(self, X, y):
-        """Compute suspiciousness scores using Ochiai"""
+        """Compute Ochiai suspiciousness scores"""
         e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
         self.scores_ = e_f/np.sqrt(((e_f + n_f) * (e_f + e_p)))
