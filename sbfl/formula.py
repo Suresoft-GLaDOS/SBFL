@@ -62,3 +62,9 @@ class Tarantula(SBFLFormula):
         r_f = e_f/(e_f + n_f)
         r_p = e_p/(e_p + n_p)
         self.scores_ = r_f/(r_f + r_p)
+
+class Jaccard(SBFLFormula):
+    def fit(self, X, y):
+        """Compute Jaccard suspiciousness scores"""
+        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
+        self.scores_ = e_f/(e_f + n_f + e_p)

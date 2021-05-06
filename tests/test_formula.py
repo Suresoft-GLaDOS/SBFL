@@ -1,5 +1,5 @@
 import numpy as np
-from sbfl.formula import Ochiai, Tarantula
+from sbfl.formula import Jaccard, Ochiai, Tarantula
 
 def X_y_sample_1():
     X = np.array([
@@ -46,3 +46,12 @@ def test_tarantula():
     assert scores[0] == 0
     assert scores[1] == 0
     assert np.round(scores[2], 3) == 0.667 # 2/3
+
+def test_jaccard():
+    X, y = X_y_sample_1()
+    jaccard = Jaccard()
+    jaccard.fit(X, y)
+    scores = jaccard.scores_
+    assert scores[0] == 0
+    assert scores[1] == 0
+    assert np.round(scores[2], 3) == 0.5
