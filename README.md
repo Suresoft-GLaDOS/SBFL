@@ -17,7 +17,10 @@ See the example usage of this engine in [./main.py](./main.py).
 python main.py
 ```
 
-## Run tests
+## Running tests
+- If you implement new functionality, please add the test cases for it.
+- After any code change, make sure that the entire test suite passes.
+
 ```bash
 # without measuring coverage
 python -m pytest
