@@ -54,3 +54,11 @@ class Ochiai(SBFLFormula):
         """Compute Ochiai suspiciousness scores"""
         e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
         self.scores_ = e_f/np.sqrt(((e_f + n_f) * (e_f + e_p)))
+
+class Tarantula(SBFLFormula):
+    def fit(self, X, y):
+        """Compute Tarantula suspiciousness scores"""
+        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
+        r_f = e_f/(e_f + n_f)
+        r_p = e_p/(e_p + n_p)
+        self.scores_ = r_f/(r_f + r_p)
