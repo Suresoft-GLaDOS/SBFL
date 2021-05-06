@@ -2,14 +2,20 @@ import numpy as np
 from abc import ABC, abstractmethod
 from sklearn.utils import check_X_y
 
+class NoFailingTestException(Exception):
+    pass
+
 class SBFLFormula(ABC):
     def __init__(self):
         self.scores_ = None
 
     def check_X_y(self, X, y):
         """Validate Input"""
-        return check_X_y(X, y, accept_sparse=False, dtype=bool,
+        X, y = check_X_y(X, y, accept_sparse=False, dtype=bool,
             ensure_2d=True, y_numeric=True, multi_output=False)
+        if np.invert(y).sum() == 0:
+            raise NoFailingTestException
+        return X, y
 
     def get_spectrum(self, X, y):
         """
