@@ -1,5 +1,5 @@
 import numpy as np
-from sbfl.formula import Jaccard, Ochiai, Tarantula
+from sbfl.formula import *
 
 def X_y_sample_1():
     X = np.array([
@@ -55,3 +55,21 @@ def test_jaccard():
     assert scores[0] == 0
     assert scores[1] == 0
     assert np.round(scores[2], 3) == 0.5
+
+def test_russellrao():
+    X, y = X_y_sample_1()
+    rr = RussellRao()
+    rr.fit(X, y)
+    scores = rr.scores_
+    assert scores[0] == 0
+    assert scores[1] == 0
+    assert np.round(scores[2], 3) == 0.333 # 1/3
+
+def test_hamann():
+    X, y = X_y_sample_1()
+    hamann = Hamann()
+    hamann.fit(X, y)
+    scores = hamann.scores_
+    assert scores[0] == -1
+    assert np.round(scores[1], 3) == -0.333
+    assert np.round(scores[2], 3) == 0.333 # 1/3

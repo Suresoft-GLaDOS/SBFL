@@ -68,3 +68,19 @@ class Jaccard(SBFLFormula):
         """Compute Jaccard suspiciousness scores"""
         e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
         self.scores_ = e_f/(e_f + n_f + e_p)
+
+class RussellRao(SBFLFormula):
+    def fit(self, X, y):
+        """Compute RussellRao suspiciousness scores"""
+        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
+        self.scores_ = e_f/(e_f + n_f + e_p + n_p)
+        # optimized version
+        # self.scores_ = e_f/y.shape[0]
+
+class Hamann(SBFLFormula):
+    def fit(self, X, y):
+        """Compute Hamann suspiciousness scores"""
+        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
+        self.scores_ = (e_f + n_p - e_p - n_f)/(e_f + n_f + e_p + n_p)
+        # optimized version
+        # self.scores_ = (e_f + n_p - e_p - n_f)/y.shape[0]
