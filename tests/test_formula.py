@@ -91,3 +91,12 @@ def test_dice():
     assert scores[0] == 0
     assert scores[1] == 0
     assert scores[2] == 1
+
+def test_kulczynski1():
+    X, y = X_y_sample_1()
+    k1 = SBFL(formula='Kulczynski1')
+    k1.fit(X, y)
+    scores = k1.scores_
+    assert scores[0] == 0
+    assert scores[1] == 0
+    assert scores[2] == 1

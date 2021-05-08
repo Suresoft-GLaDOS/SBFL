@@ -22,3 +22,6 @@ def SorensonDice(e_p, n_p, e_f, n_f):
 
 def Dice(e_p, n_p, e_f, n_f):
     return (2 * e_f)/(e_f + n_f + e_p)
+
+def Kulczynski1(e_p, n_p, e_f, n_f):
+    return e_f/(n_f + e_p)
