@@ -29,7 +29,7 @@ def test_get_spectrum():
     assert np.all(e_p + n_p == num_passings)
     assert np.all(e_f + n_f == num_failings)
 
-def test_ochai():
+def test_ochiai():
     X, y = X_y_sample_1()
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
