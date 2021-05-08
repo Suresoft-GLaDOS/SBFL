@@ -73,3 +73,21 @@ def test_hamann():
     assert scores[0] == -1
     assert scores[1] == -1/3
     assert scores[2] == 1/3
+
+def test_sorensondice():
+    X, y = X_y_sample_1()
+    sd = SorensonDice()
+    sd.fit(X, y)
+    scores = sd.scores_
+    assert scores[0] == 0
+    assert scores[1] == 0
+    assert scores[2] == 2/3
+
+def test_dice():
+    X, y = X_y_sample_1()
+    dice = Dice()
+    dice.fit(X, y)
+    scores = dice.scores_
+    assert scores[0] == 0
+    assert scores[1] == 0
+    assert scores[2] == 1

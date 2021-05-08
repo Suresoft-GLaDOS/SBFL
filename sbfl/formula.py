@@ -84,3 +84,15 @@ class Hamann(SBFLFormula):
         self.scores_ = (e_f + n_p - e_p - n_f)/(e_f + n_f + e_p + n_p)
         # optimized version
         # self.scores_ = (e_f + n_p - e_p - n_f)/y.shape[0]
+
+class SorensonDice(SBFLFormula):
+    def fit(self, X, y):
+        """Compute SorensonDice suspiciousness scores"""
+        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
+        self.scores_ = (2 * e_f)/(2 * e_f + e_p + n_f)
+
+class Dice(SBFLFormula):
+    def fit(self, X, y):
+        """Compute Dice suspiciousness scores"""
+        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
+        self.scores_ = (2 * e_f)/(e_f + n_f + e_p)
