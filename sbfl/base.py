@@ -50,8 +50,8 @@ class SBFL:
         return e_p, n_p, e_f, n_f
 
     def fit(self, X, y):
-        e_p, e_f, n_p, n_f = self.get_spectrum(X, y)
         """Compute suspiciousness scores and store it in self.scores_"""
+        e_p, e_f, n_p, n_f = self.get_spectrum(X, y)
         fml = getattr(sbfl_formula, self.formula)
         self.scores_ = fml(e_p, e_f, n_p, n_f)
         self.e_p, self.e_f, self.n_p, self.n_f = e_p, e_f, n_p, n_f
