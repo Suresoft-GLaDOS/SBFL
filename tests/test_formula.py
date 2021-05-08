@@ -36,7 +36,7 @@ def test_ochai():
     scores = ochiai.scores_
     assert scores[0] == 0
     assert scores[1] == 0
-    assert np.round(scores[2], 3) == 0.707
+    assert scores[2] == 1/np.sqrt(2)
 
 def test_tarantula():
     X, y = X_y_sample_1()
@@ -45,7 +45,7 @@ def test_tarantula():
     scores = tarantula.scores_
     assert scores[0] == 0
     assert scores[1] == 0
-    assert np.round(scores[2], 3) == 0.667 # 2/3
+    assert scores[2] == 2/3
 
 def test_jaccard():
     X, y = X_y_sample_1()
@@ -54,7 +54,7 @@ def test_jaccard():
     scores = jaccard.scores_
     assert scores[0] == 0
     assert scores[1] == 0
-    assert np.round(scores[2], 3) == 0.5
+    assert scores[2] == 1/2
 
 def test_russellrao():
     X, y = X_y_sample_1()
@@ -63,7 +63,7 @@ def test_russellrao():
     scores = rr.scores_
     assert scores[0] == 0
     assert scores[1] == 0
-    assert np.round(scores[2], 3) == 0.333 # 1/3
+    assert scores[2] == 1/3
 
 def test_hamann():
     X, y = X_y_sample_1()
@@ -71,5 +71,5 @@ def test_hamann():
     hamann.fit(X, y)
     scores = hamann.scores_
     assert scores[0] == -1
-    assert np.round(scores[1], 3) == -0.333
-    assert np.round(scores[2], 3) == 0.333 # 1/3
+    assert scores[1] == -1/3
+    assert scores[2] == 1/3
