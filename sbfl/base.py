@@ -1,12 +1,21 @@
 import numpy as np
+from inspect import getmembers, isfunction
 from sklearn.utils import check_X_y
-from . import formula
+from . import sbfl_formula
 
-class NoFailingTestException(Exception):
+class NoFailingTestError(Exception):
+    """Raised when there is no failing test (0 not in y)"""
+    pass
+
+class NotSupportedFormulaError(Exception):
+    """Raised when the formula is not supported"""
     pass
 
 class SBFL:
     def __init__(self, formula='Ochiai'):
+        supported_formulae = [name for name, _ in getmembers(sbfl_formula, isfunction)]
+        if formula not in supported_formulae:
+            raise NotSupportedFormulaError(f"Supported formulae: {supported_formulae}")
         self.formula = formula
         self.scores_ = None
 
@@ -15,7 +24,7 @@ class SBFL:
         X, y = check_X_y(X, y, accept_sparse=False, dtype=bool,
             ensure_2d=True, y_numeric=True, multi_output=False)
         if np.invert(y).sum() == 0:
-            raise NoFailingTestException
+            raise NoFailingTestError
         return X, y
 
     def get_spectrum(self, X, y):
@@ -43,7 +52,7 @@ class SBFL:
     def fit(self, X, y):
         e_p, e_f, n_p, n_f = self.get_spectrum(X, y)
         """Compute suspiciousness scores and store it in self.scores_"""
-        fml = getattr(formula, self.formula)
+        fml = getattr(sbfl_formula, self.formula)
         self.scores_ = fml(e_p, e_f, n_p, n_f)
         self.e_p, self.e_f, self.n_p, self.n_f = e_p, e_f, n_p, n_f
 
