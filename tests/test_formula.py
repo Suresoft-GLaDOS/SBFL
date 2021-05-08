@@ -1,5 +1,5 @@
 import numpy as np
-from sbfl.formula import *
+from sbfl.base import SBFL
 
 def X_y_sample_1():
     X = np.array([
@@ -18,8 +18,8 @@ def X_y_sample_1():
 def test_get_spectrum():
     X, y = X_y_sample_1()
 
-    ochiai = Ochiai()
-    e_p, n_p, e_f, n_f = ochiai.get_spectrum(X, y)
+    loc = SBFL()
+    e_p, n_p, e_f, n_f = loc.get_spectrum(X, y)
 
     num_passings = y.sum()
     num_failings = np.invert(y).sum()
@@ -31,7 +31,7 @@ def test_get_spectrum():
 
 def test_ochai():
     X, y = X_y_sample_1()
-    ochiai = Ochiai()
+    ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
     scores = ochiai.scores_
     assert scores[0] == 0
@@ -40,7 +40,7 @@ def test_ochai():
 
 def test_tarantula():
     X, y = X_y_sample_1()
-    tarantula = Tarantula()
+    tarantula = SBFL(formula='Tarantula')
     tarantula.fit(X, y)
     scores = tarantula.scores_
     assert scores[0] == 0
@@ -49,7 +49,7 @@ def test_tarantula():
 
 def test_jaccard():
     X, y = X_y_sample_1()
-    jaccard = Jaccard()
+    jaccard = SBFL(formula='Jaccard')
     jaccard.fit(X, y)
     scores = jaccard.scores_
     assert scores[0] == 0
@@ -58,7 +58,7 @@ def test_jaccard():
 
 def test_russellrao():
     X, y = X_y_sample_1()
-    rr = RussellRao()
+    rr = SBFL(formula='RussellRao')
     rr.fit(X, y)
     scores = rr.scores_
     assert scores[0] == 0
@@ -67,7 +67,7 @@ def test_russellrao():
 
 def test_hamann():
     X, y = X_y_sample_1()
-    hamann = Hamann()
+    hamann = SBFL(formula='Hamann')
     hamann.fit(X, y)
     scores = hamann.scores_
     assert scores[0] == -1
@@ -76,7 +76,7 @@ def test_hamann():
 
 def test_sorensondice():
     X, y = X_y_sample_1()
-    sd = SorensonDice()
+    sd = SBFL(formula='SorensonDice')
     sd.fit(X, y)
     scores = sd.scores_
     assert scores[0] == 0
@@ -85,7 +85,7 @@ def test_sorensondice():
 
 def test_dice():
     X, y = X_y_sample_1()
-    dice = Dice()
+    dice = SBFL(formula='Dice')
     dice.fit(X, y)
     scores = dice.scores_
     assert scores[0] == 0

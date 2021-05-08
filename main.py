@@ -1,5 +1,5 @@
 import numpy as np
-from sbfl.formula import *
+from sbfl.base import SBFL
 
 if __name__ == "__main__":
     X = np.array([
@@ -10,6 +10,6 @@ if __name__ == "__main__":
 
     y = np.array([1,0,1], dtype=bool)
 
-    ochiai = Ochiai()
+    ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
     print(ochiai.scores_)

@@ -1,98 +1,24 @@
 import numpy as np
-from abc import ABC, abstractmethod
-from sklearn.utils import check_X_y
 
-class NoFailingTestException(Exception):
-    pass
+def Ochiai(e_p, n_p, e_f, n_f):
+    return e_f/np.sqrt(((e_f + n_f) * (e_f + e_p)))
 
-class SBFLFormula(ABC):
-    def __init__(self):
-        self.scores_ = None
+def Tarantula(e_p, n_p, e_f, n_f):
+    r_f = e_f/(e_f + n_f)
+    r_p = e_p/(e_p + n_p)
+    return r_f/(r_f + r_p)
 
-    def check_X_y(self, X, y):
-        """Validate Input"""
-        X, y = check_X_y(X, y, accept_sparse=False, dtype=bool,
-            ensure_2d=True, y_numeric=True, multi_output=False)
-        if np.invert(y).sum() == 0:
-            raise NoFailingTestException
-        return X, y
+def Jaccard(e_p, n_p, e_f, n_f):
+    return e_f/(e_f + n_f + e_p)
 
-    def get_spectrum(self, X, y):
-        """
-        Convert coverage data (X) and test results (y) to program execution spectrum
- 
-        Return: (e_p, n_p, e_f, n_f)
-            - e_p: the number of passing tests that cover each elements
-            - n_p: the number of passing tests that do not cover each elements
-            - e_f: the number of failing tests that cover each elements
-            - n_f: the number of failing tests that do not cover each elements
-        """
-        X, y = self.check_X_y(X, y)
+def RussellRao(e_p, n_p, e_f, n_f):
+    return e_f/(e_f + n_f + e_p + n_p)
 
-        is_passing = y
-        is_failing = np.invert(y)
+def Hamann(e_p, n_p, e_f, n_f):
+    return (e_f + n_p - e_p - n_f)/(e_f + n_f + e_p + n_p)
 
-        e_p = X[is_passing].sum(axis=0)
-        e_f = X[is_failing].sum(axis=0)   
-        n_p = np.sum(is_passing) - e_p
-        n_f = np.sum(is_failing) - e_f
+def SorensonDice(e_p, n_p, e_f, n_f):
+    return (2 * e_f)/(2 * e_f + e_p + n_f)
 
-        return e_p, n_p, e_f, n_f
-
-    @abstractmethod
-    def fit(self, X, y):
-        """Compute suspiciousness scores and store it in self.scores_"""
-        pass
-
-    def fit_predict(self, X, y):
-        """Compute and return suspiciousness scores"""
-        self.fit(X, y)
-        return self.scores_
-
-class Ochiai(SBFLFormula):
-    def fit(self, X, y):
-        """Compute Ochiai suspiciousness scores"""
-        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
-        self.scores_ = e_f/np.sqrt(((e_f + n_f) * (e_f + e_p)))
-
-class Tarantula(SBFLFormula):
-    def fit(self, X, y):
-        """Compute Tarantula suspiciousness scores"""
-        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
-        r_f = e_f/(e_f + n_f)
-        r_p = e_p/(e_p + n_p)
-        self.scores_ = r_f/(r_f + r_p)
-
-class Jaccard(SBFLFormula):
-    def fit(self, X, y):
-        """Compute Jaccard suspiciousness scores"""
-        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
-        self.scores_ = e_f/(e_f + n_f + e_p)
-
-class RussellRao(SBFLFormula):
-    def fit(self, X, y):
-        """Compute RussellRao suspiciousness scores"""
-        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
-        self.scores_ = e_f/(e_f + n_f + e_p + n_p)
-        # optimized version
-        # self.scores_ = e_f/y.shape[0]
-
-class Hamann(SBFLFormula):
-    def fit(self, X, y):
-        """Compute Hamann suspiciousness scores"""
-        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
-        self.scores_ = (e_f + n_p - e_p - n_f)/(e_f + n_f + e_p + n_p)
-        # optimized version
-        # self.scores_ = (e_f + n_p - e_p - n_f)/y.shape[0]
-
-class SorensonDice(SBFLFormula):
-    def fit(self, X, y):
-        """Compute SorensonDice suspiciousness scores"""
-        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
-        self.scores_ = (2 * e_f)/(2 * e_f + e_p + n_f)
-
-class Dice(SBFLFormula):
-    def fit(self, X, y):
-        """Compute Dice suspiciousness scores"""
-        e_p, n_p, e_f, n_f = self.get_spectrum(X, y)
-        self.scores_ = (2 * e_f)/(e_f + n_f + e_p)
+def Dice(e_p, n_p, e_f, n_f):
+    return (2 * e_f)/(e_f + n_f + e_p)
