@@ -1,6 +1,7 @@
 import numpy as np
 from inspect import getmembers, isfunction
 from sklearn.utils import check_X_y
+from scipy.stats import rankdata
 from . import sbfl_formula
 
 class NoFailingTestError(Exception):
@@ -19,7 +20,10 @@ class SBFL:
 
         self.formula = formula
         self.formula_func = supported_formulae[formula]
-        self.scores_ = None
+
+    def ranks(self, method='average'):
+        """An array of size equl to the size of scores_, containing ranks"""
+        return rankdata(-self.scores_, method=method)
 
     def check_X_y(self, X, y):
         """Validate Input"""

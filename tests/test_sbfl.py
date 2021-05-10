@@ -15,6 +15,9 @@ def X_y_sample_1():
     # - n_f = [1, 1, 0]
     return X, y
 
+"""
+Test `get_spectrum`
+"""
 def test_get_spectrum():
     X, y = X_y_sample_1()
 
@@ -29,6 +32,42 @@ def test_get_spectrum():
     assert np.all(e_p + n_p == num_passings)
     assert np.all(e_f + n_f == num_failings)
 
+"""
+Test `ranks` with different tie breakers
+"""
+def test_minrank():
+    X, y = X_y_sample_1()
+
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+    min_ranks = ochiai.ranks(method='min')
+    assert min_ranks[0] == 2
+    assert min_ranks[1] == 2
+    assert min_ranks[2] == 1
+
+def test_avgrank():
+    X, y = X_y_sample_1()
+
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+    avg_ranks = ochiai.ranks(method='average')
+    assert avg_ranks[0] == 2.5
+    assert avg_ranks[1] == 2.5
+    assert avg_ranks[2] == 1
+
+def test_maxrank():
+    X, y = X_y_sample_1()
+
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+    max_ranks = ochiai.ranks(method='max')
+    assert max_ranks[0] == 3
+    assert max_ranks[1] == 3
+    assert max_ranks[2] == 1
+
+"""
+Test each formula
+"""
 def test_ochiai():
     X, y = X_y_sample_1()
     ochiai = SBFL(formula='Ochiai')

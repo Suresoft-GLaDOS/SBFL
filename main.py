@@ -15,5 +15,9 @@ if __name__ == "__main__":
     ], dtype=bool)
 
     ochiai = SBFL(formula='Ochiai')
+
     ochiai.fit(X, y)
     print(ochiai.scores_)
+    print("Ranks with min tiebreaker:", ochiai.ranks(method='min'))
+    print("Ranks with avg tiebreaker:", ochiai.ranks(method='average'))
+    print("Ranks with max tiebreaker:", ochiai.ranks(method='max'))
