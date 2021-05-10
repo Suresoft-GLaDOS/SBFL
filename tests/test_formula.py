@@ -100,3 +100,12 @@ def test_kulczynski1():
     assert scores[0] == 0
     assert scores[1] == 0
     assert scores[2] == 1
+
+def test_kulczynski2():
+    X, y = X_y_sample_1()
+    k2 = SBFL(formula='Kulczynski2')
+    k2.fit(X, y)
+    scores = k2.scores_
+    assert scores[0] == 0
+    assert scores[1] == 0
+    assert scores[2] == 3/4
