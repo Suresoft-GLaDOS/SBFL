@@ -13,10 +13,12 @@ class NotSupportedFormulaError(Exception):
 
 class SBFL:
     def __init__(self, formula='Ochiai'):
-        supported_formulae = [name for name, _ in getmembers(sbfl_formula, isfunction)]
+        supported_formulae = dict(getmembers(sbfl_formula, isfunction))
         if formula not in supported_formulae:
             raise NotSupportedFormulaError(f"Supported formulae: {supported_formulae}")
+
         self.formula = formula
+        self.formula_func = supported_formulae[formula]
         self.scores_ = None
 
     def check_X_y(self, X, y):
@@ -52,8 +54,7 @@ class SBFL:
     def fit(self, X, y):
         """Compute suspiciousness scores and store it in self.scores_"""
         e_p, e_f, n_p, n_f = self.get_spectrum(X, y)
-        fml = getattr(sbfl_formula, self.formula)
-        self.scores_ = fml(e_p, e_f, n_p, n_f)
+        self.scores_ = self.formula_func(e_p, e_f, n_p, n_f)
         self.e_p, self.e_f, self.n_p, self.n_f = e_p, e_f, n_p, n_f
 
     def fit_predict(self, X, y):
