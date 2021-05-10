@@ -8,7 +8,11 @@ if __name__ == "__main__":
         [1,1,0]  # coverage of test t2
     ], dtype=bool)
 
-    y = np.array([1,0,1], dtype=bool)
+    y = np.array([
+        1, # t0: PASS
+        0, # t1: FAIL
+        1  # t2: PASS
+    ], dtype=bool)
 
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
