@@ -65,6 +65,26 @@ def test_maxrank():
     assert max_ranks[1] == 3
     assert max_ranks[2] == 1
 
+def test_denserank():
+    X, y = X_y_sample_1()
+
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+    dense_ranks = ochiai.ranks(method='dense')
+    assert dense_ranks[0] == 2
+    assert dense_ranks[1] == 2
+    assert dense_ranks[2] == 1
+
+def test_ordinalrank():
+    X, y = X_y_sample_1()
+
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+    ord_ranks = ochiai.ranks(method='ordinal')
+    assert ord_ranks[0] == 2
+    assert ord_ranks[1] == 3
+    assert ord_ranks[2] == 1
+
 """
 Test each formula
 """

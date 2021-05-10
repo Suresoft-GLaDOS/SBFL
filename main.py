@@ -21,3 +21,5 @@ if __name__ == "__main__":
     print("Ranks with min tiebreaker:", ochiai.ranks(method='min'))
     print("Ranks with avg tiebreaker:", ochiai.ranks(method='average'))
     print("Ranks with max tiebreaker:", ochiai.ranks(method='max'))
+    print("Ranks with dense tiebreaker:", ochiai.ranks(method='dense'))
+    print("Ranks with ordinal tiebreaker:", ochiai.ranks(method='ordinal'))

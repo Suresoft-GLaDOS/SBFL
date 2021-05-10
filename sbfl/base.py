@@ -21,10 +21,6 @@ class SBFL:
         self.formula = formula
         self.formula_func = supported_formulae[formula]
 
-    def ranks(self, method='average'):
-        """An array of size equl to the size of scores_, containing ranks"""
-        return rankdata(-self.scores_, method=method)
-
     def check_X_y(self, X, y):
         """Validate Input"""
         X, y = check_X_y(X, y, accept_sparse=False, dtype=bool,
@@ -65,3 +61,12 @@ class SBFL:
         """Compute and return suspiciousness scores"""
         self.fit(X, y)
         return self.scores_
+
+    def ranks(self, method='average'):
+        """
+        An array of size equl to the size of scores_, containing ranks 
+
+        See https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.rankdata.html
+        for the details of ranking methods (tie-breakers).
+        """
+        return rankdata(-self.scores_, method=method)
