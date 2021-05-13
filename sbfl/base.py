@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from inspect import getmembers, isfunction
 from sklearn.utils import check_X_y
 from scipy.stats import rankdata
@@ -70,3 +71,10 @@ class SBFL:
         for the details of ranking methods (tie-breakers).
         """
         return rankdata(-self.scores_, method=method)
+
+    def to_frame(self, elements=None):
+        if elements is not None:
+            df = pd.DataFrame({'score': self.scores_}, index=pd.MultiIndex.from_tuples(elements))
+        else:
+            df = pd.DataFrame({'score': self.scores_})
+        return df

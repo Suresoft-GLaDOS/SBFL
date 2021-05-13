@@ -1,7 +1,17 @@
 import numpy as np
+import pandas as pd
 from sbfl.base import SBFL
 
 if __name__ == "__main__":
+    formula='Ochiai'
+    tie_breaker='max'
+
+    elements = [
+        ('file1.py', 'method1'),
+        ('file2.py', 'method2'),
+        ('file2.py', 'method3')
+    ]
+
     X = np.array([
         [1,0,1], # coverage of test t0
         [0,0,1], # coverage of test t1
@@ -14,12 +24,8 @@ if __name__ == "__main__":
         1  # t2: PASS
     ], dtype=bool)
 
-    ochiai = SBFL(formula='Ochiai')
+    sbfl = SBFL(formula=formula)
+    sbfl.fit(X, y)
+    print(sbfl.ranks(method='max'))
 
-    ochiai.fit(X, y)
-    print(ochiai.scores_)
-    print("Ranks with min tiebreaker:", ochiai.ranks(method='min'))
-    print("Ranks with avg tiebreaker:", ochiai.ranks(method='average'))
-    print("Ranks with max tiebreaker:", ochiai.ranks(method='max'))
-    print("Ranks with dense tiebreaker:", ochiai.ranks(method='dense'))
-    print("Ranks with ordinal tiebreaker:", ochiai.ranks(method='ordinal'))
+    print(sbfl.to_frame(elements=elements))
