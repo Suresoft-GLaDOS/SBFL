@@ -105,6 +105,25 @@ def test_to_frame_without_elements():
 def test_to_frame_with_elements():
     X, y = X_y_sample_1()
     elements = [
+        'e1',
+        'e2',
+        'e3'
+    ]
+
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+    df = ochiai.to_frame(elements=elements)
+    scores = ochiai.scores_
+
+    assert df.shape[0] == 3
+    assert "score" in df.columns
+    for i in range(df.shape[0]):
+        assert df.index[i] == elements[i]
+        assert df.values[i] == scores[i]
+
+def test_to_frame_with_tuple_elements():
+    X, y = X_y_sample_1()
+    elements = [
         ('file1.py', 'method1'),
         ('file2.py', 'method2'),
         ('file2.py', 'method3')
