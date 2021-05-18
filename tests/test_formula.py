@@ -98,3 +98,12 @@ def test_kulczynski2():
     assert scores[0] == 0
     assert scores[1] == 0
     assert scores[2] == 3/4
+
+def test_simplematching():
+    X, y = X_y_sample_1()
+    sm = SBFL(formula='SimpleMatching')
+    sm.fit(X, y)
+    scores = sm.scores_
+    assert scores[0] == 0
+    assert scores[1] == 1/3
+    assert scores[2] == 2/3

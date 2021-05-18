@@ -28,3 +28,6 @@ def Kulczynski1(e_p, n_p, e_f, n_f):
 
 def Kulczynski2(e_p, n_p, e_f, n_f):
     return e_f * (1/(e_f + n_f) + 1/(e_f + e_p)) / 2
+
+def SimpleMatching(e_p, n_p, e_f, n_f):
+    return (e_f + n_p)/(e_f + n_f + e_p + n_p)
