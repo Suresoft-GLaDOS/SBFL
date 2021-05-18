@@ -86,85 +86,37 @@ def test_ordinalrank():
     assert ord_ranks[2] == 1
 
 """
-Test each formula
+Test `to_frame`
 """
-def test_ochiai():
+def test_to_frame_without_elements():
     X, y = X_y_sample_1()
+
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
+    df = ochiai.to_frame()
     scores = ochiai.scores_
-    assert scores[0] == 0
-    assert scores[1] == 0
-    assert scores[2] == 1/np.sqrt(2)
 
-def test_tarantula():
-    X, y = X_y_sample_1()
-    tarantula = SBFL(formula='Tarantula')
-    tarantula.fit(X, y)
-    scores = tarantula.scores_
-    assert scores[0] == 0
-    assert scores[1] == 0
-    assert scores[2] == 2/3
+    assert df.shape[0] == 3
+    assert "score" in df.columns
+    for i in range(df.shape[0]):
+        assert df.index[i] == i
+        assert df.values[i] == scores[i]
 
-def test_jaccard():
+def test_to_frame_with_elements():
     X, y = X_y_sample_1()
-    jaccard = SBFL(formula='Jaccard')
-    jaccard.fit(X, y)
-    scores = jaccard.scores_
-    assert scores[0] == 0
-    assert scores[1] == 0
-    assert scores[2] == 1/2
+    elements = [
+        ('file1.py', 'method1'),
+        ('file2.py', 'method2'),
+        ('file2.py', 'method3')
+    ]
 
-def test_russellrao():
-    X, y = X_y_sample_1()
-    rr = SBFL(formula='RussellRao')
-    rr.fit(X, y)
-    scores = rr.scores_
-    assert scores[0] == 0
-    assert scores[1] == 0
-    assert scores[2] == 1/3
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+    df = ochiai.to_frame(elements=elements)
+    scores = ochiai.scores_
 
-def test_hamann():
-    X, y = X_y_sample_1()
-    hamann = SBFL(formula='Hamann')
-    hamann.fit(X, y)
-    scores = hamann.scores_
-    assert scores[0] == -1
-    assert scores[1] == -1/3
-    assert scores[2] == 1/3
-
-def test_sorensondice():
-    X, y = X_y_sample_1()
-    sd = SBFL(formula='SorensonDice')
-    sd.fit(X, y)
-    scores = sd.scores_
-    assert scores[0] == 0
-    assert scores[1] == 0
-    assert scores[2] == 2/3
-
-def test_dice():
-    X, y = X_y_sample_1()
-    dice = SBFL(formula='Dice')
-    dice.fit(X, y)
-    scores = dice.scores_
-    assert scores[0] == 0
-    assert scores[1] == 0
-    assert scores[2] == 1
-
-def test_kulczynski1():
-    X, y = X_y_sample_1()
-    k1 = SBFL(formula='Kulczynski1')
-    k1.fit(X, y)
-    scores = k1.scores_
-    assert scores[0] == 0
-    assert scores[1] == 0
-    assert scores[2] == 1
-
-def test_kulczynski2():
-    X, y = X_y_sample_1()
-    k2 = SBFL(formula='Kulczynski2')
-    k2.fit(X, y)
-    scores = k2.scores_
-    assert scores[0] == 0
-    assert scores[1] == 0
-    assert scores[2] == 3/4
+    assert df.shape[0] == 3
+    assert "score" in df.columns
+    for i in range(df.shape[0]):
+        assert df.index[i] == elements[i]
+        assert df.values[i] == scores[i]
