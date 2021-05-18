@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from sbfl.base import SBFL
 
@@ -139,3 +140,16 @@ def test_to_frame_with_tuple_elements():
     for i in range(df.shape[0]):
         assert df.index[i] == elements[i]
         assert df.values[i] == scores[i]
+
+def test_to_frame_shape_error():
+    X, y = X_y_sample_1()
+    elements = [
+        ('file1.py', 'method1'),
+        ('file2.py', 'method2'),
+    ]
+
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+
+    with pytest.raises(ValueError):
+        ochiai.to_frame(elements=elements)

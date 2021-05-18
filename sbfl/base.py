@@ -80,13 +80,14 @@ class SBFL:
         - if `elements` is a list of tuple, set the index of `df` to a MultiIndex made from the tuples
         - otherwise, set the index of `df` to `elements`.
         """
-        if elements is not None:
+        if elements is None:
+            index = None
+        else:
             if all([isinstance(e, tuple) for e in elements]):
                 index = pd.MultiIndex.from_tuples(elements)
             else:
                 index = pd.Index(elements)
 
-            df = pd.DataFrame({'score': self.scores_}, index=index)
-        else:
-            df = pd.DataFrame({'score': self.scores_})
+        df = pd.DataFrame({'score': self.scores_}, index=index)
+
         return df
