@@ -3,16 +3,6 @@ import pandas as pd
 from sbfl.base import SBFL
 
 if __name__ == "__main__":
-    formula='Ochiai'
-    tie_breaker='max'
-
-    names = ['file', 'method']
-    elements = [
-        ('file1.py', 'method1'),
-        ('file2.py', 'method2'),
-        ('file2.py', 'method3')
-    ]
-
     X = np.array([
         [1,0,1], # coverage of test t0
         [0,0,1], # coverage of test t1
@@ -25,7 +15,24 @@ if __name__ == "__main__":
         1  # t2: PASS
     ], dtype=bool)
 
-    sbfl = SBFL(formula=formula)
+    """
+    Calculate the suspiciousness scores
+    """
+    sbfl = SBFL(formula='Ochiai')
     sbfl.fit(X, y)
     print(sbfl.ranks(method='max'))
-    print(sbfl.to_frame(elements=elements, names=names))
+
+
+    """
+    file-level score aggregation (max)
+    """
+    names = ['file', 'method']
+    elements = [
+        ('file1.py', 'method1'),
+        ('file2.py', 'method2'),
+        ('file2.py', 'method3')
+    ]
+    df = sbfl.to_frame(elements=elements, names=names)
+
+    print(df)
+    print(df.max(level='file'))
