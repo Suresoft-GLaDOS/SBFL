@@ -76,9 +76,8 @@ class SBFL:
         """
         Convert self.scores_ to a Pandas DataFrame object `df`
 
-        When `elements` is not None,
-        - if `elements` is a list of tuple, set the index of `df` to a MultiIndex made from the tuples
-        - otherwise, set the index of `df` to `elements`.
+        When `elements` is not None, it should be a list of tuples, and
+        the index of `df` is set to a MultiIndex made from the tuples.
         """
         index = None
         if elements is not None:
