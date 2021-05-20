@@ -103,25 +103,6 @@ def test_to_frame_without_elements():
         assert df.index[i] == i
         assert df.values[i] == scores[i]
 
-def test_to_frame_with_elements():
-    X, y = X_y_sample_1()
-    elements = [
-        'e1',
-        'e2',
-        'e3'
-    ]
-
-    ochiai = SBFL(formula='Ochiai')
-    ochiai.fit(X, y)
-    df = ochiai.to_frame(elements=elements)
-    scores = ochiai.scores_
-
-    assert df.shape[0] == 3
-    assert "score" in df.columns
-    for i in range(df.shape[0]):
-        assert df.index[i] == elements[i]
-        assert df.values[i] == scores[i]
-
 def test_to_frame_with_tuple_elements():
     X, y = X_y_sample_1()
     elements = [
@@ -137,6 +118,28 @@ def test_to_frame_with_tuple_elements():
 
     assert df.shape[0] == 3
     assert "score" in df.columns
+    for i in range(df.shape[0]):
+        assert df.index[i] == elements[i]
+        assert df.values[i] == scores[i]
+
+def test_to_frame_with_tuple_elements_and_names():
+    X, y = X_y_sample_1()
+    names = ['file', 'method']
+    elements = [
+        ('file1.py', 'method1'),
+        ('file2.py', 'method2'),
+        ('file2.py', 'method3')
+    ]
+
+    ochiai = SBFL(formula='Ochiai')
+    ochiai.fit(X, y)
+    df = ochiai.to_frame(elements=elements, names=names)
+    scores = ochiai.scores_
+
+    assert df.shape[0] == 3
+    assert "score" in df.columns
+    assert df.index.names[0] == names[0]
+    assert df.index.names[1] == names[1]
     for i in range(df.shape[0]):
         assert df.index[i] == elements[i]
         assert df.values[i] == scores[i]

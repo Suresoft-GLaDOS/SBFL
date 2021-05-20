@@ -6,6 +6,7 @@ if __name__ == "__main__":
     formula='Ochiai'
     tie_breaker='max'
 
+    names = ['file', 'method']
     elements = [
         ('file1.py', 'method1'),
         ('file2.py', 'method2'),
@@ -27,5 +28,4 @@ if __name__ == "__main__":
     sbfl = SBFL(formula=formula)
     sbfl.fit(X, y)
     print(sbfl.ranks(method='max'))
-
-    print(sbfl.to_frame(elements=elements))
+    print(sbfl.to_frame(elements=elements, names=names))

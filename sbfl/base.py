@@ -72,7 +72,7 @@ class SBFL:
         """
         return rankdata(-self.scores_, method=method)
 
-    def to_frame(self, elements=None):
+    def to_frame(self, elements=None, names=None):
         """
         Convert self.scores_ to a Pandas DataFrame object `df`
 
@@ -80,14 +80,9 @@ class SBFL:
         - if `elements` is a list of tuple, set the index of `df` to a MultiIndex made from the tuples
         - otherwise, set the index of `df` to `elements`.
         """
-        if elements is None:
-            index = None
-        else:
-            if all([isinstance(e, tuple) for e in elements]):
-                index = pd.MultiIndex.from_tuples(elements)
-            else:
-                index = pd.Index(elements)
-
+        index = None
+        if elements is not None:
+            index = pd.MultiIndex.from_tuples(elements, names=names)
         df = pd.DataFrame({'score': self.scores_}, index=index)
 
         return df
