@@ -107,3 +107,12 @@ def test_simplematching():
     assert scores[0] == 0
     assert scores[1] == 1/3
     assert scores[2] == 2/3
+
+def test_sokal():
+    X, y = X_y_sample_1()
+    sokal = SBFL(formula='Sokal')
+    sokal.fit(X, y)
+    scores = sokal.scores_
+    assert scores[0] == 0
+    assert scores[1] == 1/2
+    assert scores[2] == 4/5
