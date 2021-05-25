@@ -1,4 +1,4 @@
-name: Test SBFL Engine
+name: Testing SBFL Engine
 
 on:
   push:
