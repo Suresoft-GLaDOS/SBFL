@@ -185,11 +185,66 @@ def test_wong3():
     assert scores[1] == -1
     assert scores[2] == 0
 
-# def test_Ample():
-#     X, y = X_y_sample_1()
-#     ample = SBFL(formula="Ample")
-#     ample.fit(X, y)
-#     scores = ample.scores_
-#     assert scores[0] == -1
-#     assert scores[1] == -1
-#     assert scores[2] == 1    
+def test_ample():
+    X, y = X_y_sample_1()
+    ample = SBFL(formula="Ample")
+    ample.fit(X, y)
+    scores = ample.scores_
+    assert scores[0] == 1.0
+    assert scores[1] == 0.5
+    assert scores[2] == 0.5  
+
+def test_dstar2():
+    X, y = X_y_sample_1()
+    dstar2 = SBFL(formula="Dstar2")
+    dstar2.fit(X, y)
+    scores = dstar2.scores_
+    assert scores[0] == 0.0
+    assert scores[1] == 0.0
+    assert scores[2] == 1.0
+
+def test_gp02():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="GP02")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert_allclose(scores[0], 1.414213562)
+    assert_allclose(scores[1], 3.0)
+    assert_allclose(scores[2], 5.0)
+
+def test_gp03():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="GP03")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert_allclose(scores[0], 1.189207)
+    assert_allclose(scores[1], 1.0)
+    assert_allclose(scores[2], 0.0)
+
+def test_gp13():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="GP13")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert_allclose(scores[0], 0.0)
+    assert_allclose(scores[1], 0.0)
+    assert_allclose(scores[2], 4 / 3)
+
+def test_gp19():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="GP19")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert_allclose(scores[0], 0.0)
+    assert_allclose(scores[1], 0.0)
+    assert_allclose(scores[2], 1.0)
+
+def test_er5c():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="ER5C")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert_allclose(scores[0], 0.0)
+    assert_allclose(scores[1], 0.0)
+    assert_allclose(scores[2], 1.0)
+
