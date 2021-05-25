@@ -40,3 +40,30 @@ def M1(e_p, n_p, e_f, n_f):
 
 def M2(e_p, n_p, e_f, n_f):
     return e_f/(e_f + n_p + 2 * n_f + 2 * e_p)
+
+def Op2(e_p, n_p, e_f, n_f):
+    return e_f - e_p / (e_p + n_p + 1.0)
+
+def Op1(e_p, n_p, e_f, n_f):
+    scores = n_p
+    scores[n_f > 0] = -1
+    return scores
+
+def Wong1(e_p, n_p, e_f, n_f):
+    return e_f
+
+def Wong2(e_p, n_p, e_f, n_f):
+    return e_f - e_p
+
+def Wong3(e_p, n_p, e_f, n_f):
+    cond1 = (e_p > 2) & (e_p <= 10)
+    cond2 = e_p > 10
+
+    h = e_p
+    h[cond1] = 2 + 0.1 * (e_p[cond1] - 2)
+    h[cond2] = 2.8 + 0.001 * (e_p[cond2] - 10)
+
+    return e_f - h
+
+# def Ample(e_p, n_p, e_f, n_f):
+#     return abs(e_f / (e_f + n_f) - e_p / (e_p + n_p))
