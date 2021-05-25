@@ -134,3 +134,57 @@ def test_m2():
     assert scores[0] == 0
     assert scores[1] == 0
     assert scores[2] == 1/4
+
+def test_op1():
+    X, y = X_y_sample_1()
+    op1 = SBFL(formula="Op1")
+    op1.fit(X, y)
+    scores = op1.scores_
+    assert scores[0] == -1
+    assert scores[1] == -1
+    assert scores[2] == 1
+
+def test_op2():
+    X, y = X_y_sample_1()
+    op2 = SBFL(formula="Op2")
+    op2.fit(X, y)
+    scores = op2.scores_
+    assert scores[0] == -(2/3)
+    assert scores[1] == -(1/3)
+    assert scores[2] == (2/3)
+
+# def test_wong1():
+#     X, y = X_y_sample_1()
+#     wong1 = SBFL(formula="Wong1")
+#     wong1.fit(X, y)
+#     scores = wong1.scores_
+#     assert scores[0] == -1
+#     assert scores[1] == -1
+#     assert scores[2] == 1
+
+# def test_wong2():
+#     X, y = X_y_sample_1()
+#     wong2 = SBFL(formula="Wong2")
+#     wong2.fit(X, y)
+#     scores = wong2.scores_
+#     assert scores[0] == -1
+#     assert scores[1] == -1
+#     assert scores[2] == 1
+
+# def test_wong3():
+#     X, y = X_y_sample_1()
+#     wong3 = SBFL(formula="Wong3")
+#     wong3.fit(X, y)
+#     scores = wong3.scores_
+#     assert scores[0] == -1
+#     assert scores[1] == -1
+#     assert scores[2] == 1
+
+# def test_Ample():
+#     X, y = X_y_sample_1()
+#     ample = SBFL(formula="Ample")
+#     ample.fit(X, y)
+#     scores = ample.scores_
+#     assert scores[0] == -1
+#     assert scores[1] == -1
+#     assert scores[2] == 1    
