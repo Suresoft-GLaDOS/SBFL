@@ -45,10 +45,9 @@ def Op2(e_p, n_p, e_f, n_f):
     return e_f - e_p / (e_p + n_p + 1.0)
 
 def Op1(e_p, n_p, e_f, n_f):
-    _scores = np.array([-1.0] * len(e_p))
-    _condition = n_f <= 0
-    _scores[_condition] = n_p[_condition]
-    return _scores
+    scores = n_p
+    scores[n_f > 0] = -1
+    return scores
 
 def Wong1(e_p, n_p, e_f, n_f):
     return e_f
@@ -57,12 +56,14 @@ def Wong2(e_p, n_p, e_f, n_f):
     return e_f - e_p
 
 def Wong3(e_p, n_p, e_f, n_f):
-    _scores = e_f - e_p
-    _condition = 2 < e_p <= 10
-    _scores[_condition] = e_f[_condition] - (2 + 0.1 * (e_p[_condition] - 2))
-    _condition = e_p > 10
-    _scores[_condition] = e_f[_condition] - (2.8 + 0.001 * (e_p[_condition] - 10))
-    return _scores
+    cond1 = (e_p > 2) & (e_p <= 10)
+    cond2 = e_p > 10
 
-def Ample(e_p, n_p, e_f, n_f):
-    return abs(e_f / (e_f + n_f) - e_p / (e_p + n_p))
+    h = e_p
+    h[cond1] = 2 + 0.1 * (e_p[cond1] - 2)
+    h[cond2] = 2.8 + 0.001 * (e_p[cond2] - 10)
+
+    return e_f - h
+
+# def Ample(e_p, n_p, e_f, n_f):
+#     return abs(e_f / (e_f + n_f) - e_p / (e_p + n_p))
