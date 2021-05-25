@@ -34,3 +34,9 @@ def SimpleMatching(e_p, n_p, e_f, n_f):
 
 def Sokal(e_p, n_p, e_f, n_f):
     return (2 * e_f + 2 * n_p)/(2 * e_f + 2 * n_p + n_f + e_p)
+
+def M1(e_p, n_p, e_f, n_f):
+    return (e_f + n_p)/(n_f + e_p)
+
+def M2(e_p, n_p, e_f, n_f):
+    return e_f/(e_f + n_p + 2 * n_f + 2 * e_p)

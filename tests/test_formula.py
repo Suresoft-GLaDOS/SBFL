@@ -116,3 +116,21 @@ def test_sokal():
     assert scores[0] == 0
     assert scores[1] == 1/2
     assert scores[2] == 4/5
+
+def test_m1():
+    X, y = X_y_sample_1()
+    m1 = SBFL(formula='M1')
+    m1.fit(X, y)
+    scores = m1.scores_
+    assert scores[0] == 0
+    assert scores[1] == 1/2
+    assert scores[2] == 2
+
+def test_m2():
+    X, y = X_y_sample_1()
+    m2 = SBFL(formula='M2')
+    m2.fit(X, y)
+    scores = m2.scores_
+    assert scores[0] == 0
+    assert scores[1] == 0
+    assert scores[2] == 1/4
