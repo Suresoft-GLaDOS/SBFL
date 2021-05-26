@@ -88,3 +88,36 @@ def ER5C(e_p, n_p, e_f, n_f):
     scores = np.zeros(len(e_p))
     scores[n_f == 0] = 1.0
     return scores
+
+def SBI(e_p, n_p, e_f, n_f):
+    return e_f / (e_f + e_p)
+
+def Goodman(e_p, n_p, e_f, n_f):
+    return (2 * e_f - n_f - e_p) / (2 * e_f + n_f + e_p)
+
+def Zoltar(e_p, n_p, e_f, n_f):
+    scores = e_f
+    nz = e_f != 0
+    scores[nz] = e_f[nz] / (e_f[nz] + n_f[nz] + e_p[nz] + 10000 * n_f[nz] * e_p[nz] / e_f[nz])
+    return scores
+
+def Ochiai2(e_p, n_p, e_f, n_f):
+    scores = np.zeros(len(e_f))
+    cond = (e_f != 0) & (n_p != 0)
+    scores[cond] = e_f[cond] * n_p[cond] / np.sqrt((e_f[cond] + e_p[cond]) * (n_f[cond] + n_p[cond]) * (e_f[cond] * n_p[cond]) * (n_f[cond] + e_p[cond]))
+    return scores
+
+def Anderberg(e_p, n_p, e_f, n_f):
+    return e_f / (e_f + 2 * n_f + 2 * e_p)
+
+def Hamming(e_p, n_p, e_f, n_f):
+    return e_f + n_p
+
+def RogerTanimoto(e_p, n_p, e_f, n_f):
+    return (e_f + n_p) / (e_f + n_p + 2 * n_f + 2 * e_p)
+
+def Euclid(e_p, n_p, e_f, n_f):
+    return np.sqrt(e_f + n_p)
+
+def Overlap(e_p, n_p, e_f, n_f):
+    return e_f / np.minimum(e_f, np.minimum(e_p, n_f))

@@ -248,3 +248,74 @@ def test_er5c():
     assert_allclose(scores[1], 0.0)
     assert_allclose(scores[2], 1.0)
 
+def test_sbi():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="SBI")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert_allclose(scores[0], 0.0)
+    assert_allclose(scores[1], 0.0)
+    assert_allclose(scores[2], 0.5)
+
+def test_goodman():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="Goodman")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert_allclose(scores[0], -1.0)
+    assert_allclose(scores[1], -1.0)
+    assert_allclose(scores[2], 1 / 3)
+
+def test_zoltar():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="Zoltar")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert scores[0] == 0.0
+    assert scores[1] == 0.0
+    assert scores[2] == 0.0
+    
+def test_ochiai2():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="Ochiai2")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert scores[0] == 0
+    assert scores[1] == 0
+    assert_allclose(scores[2], 1/np.sqrt(2))
+
+def test_anderberg():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="Anderberg")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert scores[0] == 0.0
+    assert scores[1] == 0.0
+    assert_allclose(scores[2], 1 / 3)
+
+def test_hamming():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="Hamming")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert scores[0] == 0.0
+    assert scores[1] == 1.0
+    assert scores[2] == 2.0
+
+def test_rogertanimoto():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="RogerTanimoto")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert scores[0] == 0.0
+    assert scores[1] == 0.2
+    assert scores[2] == 0.5
+
+def test_euclid():
+    X, y = X_y_sample_1()
+    formula = SBFL(formula="Euclid")
+    formula.fit(X, y)
+    scores = formula.scores_
+    assert scores[0] == 0.0
+    assert_allclose(scores[1], 1.0)
+    assert_allclose(scores[2], 1.414213562)
