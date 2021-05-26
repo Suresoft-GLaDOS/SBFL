@@ -140,20 +140,20 @@ def test_m2():
     assert scores[1] == 0
     assert_allclose(scores[2], 1/4)
 
-def test_op1():
+def test_er1a():
     X, y = X_y_sample_1()
-    op1 = SBFL(formula="Op1")
-    op1.fit(X, y)
-    scores = op1.scores_
+    er1a = SBFL(formula="ER1a")
+    er1a.fit(X, y)
+    scores = er1a.scores_
     assert scores[0] == -1
     assert scores[1] == -1
     assert scores[2] == 1
 
-def test_op2():
+def test_er1b():
     X, y = X_y_sample_1()
-    op2 = SBFL(formula="Op2")
-    op2.fit(X, y)
-    scores = op2.scores_
+    er1b = SBFL(formula="ER1b")
+    er1b.fit(X, y)
+    scores = er1b.scores_
     assert_allclose(scores[0], -2/3)
     assert_allclose(scores[1], -1/3)
     assert_allclose(scores[2], 2/3)

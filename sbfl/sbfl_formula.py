@@ -41,13 +41,19 @@ def M1(e_p, n_p, e_f, n_f):
 def M2(e_p, n_p, e_f, n_f):
     return e_f/(e_f + n_p + 2 * n_f + 2 * e_p)
 
-def Op2(e_p, n_p, e_f, n_f):
-    return e_f - e_p / (e_p + n_p + 1.0)
-
-def Op1(e_p, n_p, e_f, n_f):
+def ER1a(e_p, n_p, e_f, n_f):
     scores = n_p
     scores[n_f > 0] = -1
     return scores
+
+def ER1b(e_p, n_p, e_f, n_f):
+    return e_f - e_p / (e_p + n_p + 1.0)
+
+def Op1(e_p, n_p, e_f, n_f):
+    return ER1a(e_p, n_p, e_f, n_f)
+
+def Op2(e_p, n_p, e_f, n_f):
+    return ER1b(e_p, n_p, e_f, n_f)
 
 def Wong1(e_p, n_p, e_f, n_f):
     return e_f
