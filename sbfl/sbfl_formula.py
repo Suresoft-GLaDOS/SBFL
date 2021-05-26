@@ -71,8 +71,8 @@ def Wong3(e_p, n_p, e_f, n_f):
 
     return e_f - h
 
-# def Ample(e_p, n_p, e_f, n_f):
-#     return np.absolute(e_f / (e_f + n_f) - e_p / (e_p + n_p))
+def Ample(e_p, n_p, e_f, n_f):
+    return np.absolute(e_f / (e_f + n_f) - e_p / (e_p + n_p))
 
 def Dstar2(e_p, n_p, e_f, n_f):
     return np.power(e_f, 2) / (e_p + n_f)
@@ -80,8 +80,8 @@ def Dstar2(e_p, n_p, e_f, n_f):
 def GP02(e_p, n_p, e_f, n_f):
     return 2 * (e_f + np.sqrt(e_p + n_p)) + np.sqrt(e_p)
 
-# def GP03(e_p, n_p, e_f, n_f):
-#     return np.sqrt(np.absolute(np.power(e_f, 2) - np.sqrt(e_p)))
+def GP03(e_p, n_p, e_f, n_f):
+    return np.sqrt(np.absolute(np.power(e_f, 2) - np.sqrt(e_p)))
 
 def GP13(e_p, n_p, e_f, n_f):
     return e_f * (1 + 1 / (2 * e_p + e_f))
