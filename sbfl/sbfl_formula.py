@@ -72,7 +72,7 @@ def Dstar2(e_p, n_p, e_f, n_f):
     return np.absolute(e_f ** 2) / (np.absolute(e_p) + np.absolute(n_f))
 
 def GP02(e_p, n_p, e_f, n_f):
-    return 2 * (e_f + np.sqrt(n_p)) + np.sqrt(e_p)
+    return 2 * (e_f + np.sqrt(e_p + n_p)) + np.sqrt(e_p)
 
 def GP03(e_p, n_p, e_f, n_f):
     return np.sqrt(np.absolute(e_f ** 2 - np.sqrt(e_p)))

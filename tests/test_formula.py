@@ -205,12 +205,12 @@ def test_dstar2():
 
 def test_gp02():
     X, y = X_y_sample_1()
-    formula = SBFL(formula="GP02")
-    formula.fit(X, y)
-    scores = formula.scores_
-    assert_allclose(scores[0], 1.414213562)
-    assert_allclose(scores[1], 3.0)
-    assert_allclose(scores[2], 5.0)
+    gp02 = SBFL(formula="GP02")
+    gp02.fit(X, y)
+    scores = gp02.scores_
+    assert_allclose(scores[0], 4.242641)
+    assert_allclose(scores[1], 3.828427)
+    assert_allclose(scores[2], 5.828427)
 
 def test_gp03():
     X, y = X_y_sample_1()
