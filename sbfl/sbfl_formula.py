@@ -84,6 +84,4 @@ def GP19(e_p, n_p, e_f, n_f):
     return e_f * np.sqrt(np.absolute(e_p - e_f + n_f - n_p))
 
 def ER5C(e_p, n_p, e_f, n_f):
-    scores = np.zeros(len(e_p))
-    scores[n_f == 0] = 1.0
-    return scores
+    return (n_f == 0).astype(float)
