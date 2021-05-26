@@ -25,162 +25,162 @@ Test each formula
 """
 def test_ochiai():
     X, y = X_y_sample_1()
-    ochiai = SBFL(formula='Ochiai')
-    ochiai.fit(X, y)
-    scores = ochiai.scores_
+    sbfl = SBFL(formula='Ochiai')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert_allclose(scores[2], 1/np.sqrt(2))
 
 def test_tarantula():
     X, y = X_y_sample_1()
-    tarantula = SBFL(formula='Tarantula')
-    tarantula.fit(X, y)
-    scores = tarantula.scores_
+    sbfl = SBFL(formula='Tarantula')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert_allclose(scores[2], 2/3)
 
 def test_jaccard():
     X, y = X_y_sample_1()
-    jaccard = SBFL(formula='Jaccard')
-    jaccard.fit(X, y)
-    scores = jaccard.scores_
+    sbfl = SBFL(formula='Jaccard')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert_allclose(scores[2], 1/2)
 
 def test_russellrao():
     X, y = X_y_sample_1()
-    rr = SBFL(formula='RussellRao')
-    rr.fit(X, y)
-    scores = rr.scores_
+    sbfl = SBFL(formula='RussellRao')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert_allclose(scores[2], 1/3)
 
 def test_hamann():
     X, y = X_y_sample_1()
-    hamann = SBFL(formula='Hamann')
-    hamann.fit(X, y)
-    scores = hamann.scores_
+    sbfl = SBFL(formula='Hamann')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == -1
     assert_allclose(scores[1], -1/3)
     assert_allclose(scores[2], 1/3)
 
 def test_sorensondice():
     X, y = X_y_sample_1()
-    sd = SBFL(formula='SorensonDice')
-    sd.fit(X, y)
-    scores = sd.scores_
+    sbfl = SBFL(formula='SorensonDice')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert_allclose(scores[2], 2/3)
 
 def test_dice():
     X, y = X_y_sample_1()
-    dice = SBFL(formula='Dice')
-    dice.fit(X, y)
-    scores = dice.scores_
+    sbfl = SBFL(formula='Dice')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert scores[2] == 1
 
 def test_kulczynski1():
     X, y = X_y_sample_1()
-    k1 = SBFL(formula='Kulczynski1')
-    k1.fit(X, y)
-    scores = k1.scores_
+    sbfl = SBFL(formula='Kulczynski1')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert scores[2] == 1
 
 def test_kulczynski2():
     X, y = X_y_sample_1()
-    k2 = SBFL(formula='Kulczynski2')
-    k2.fit(X, y)
-    scores = k2.scores_
+    sbfl = SBFL(formula='Kulczynski2')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert_allclose(scores[2], 3/4)
 
 def test_simplematching():
     X, y = X_y_sample_1()
-    sm = SBFL(formula='SimpleMatching')
-    sm.fit(X, y)
-    scores = sm.scores_
+    sbfl = SBFL(formula='SimpleMatching')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert_allclose(scores[1], 1/3)
     assert_allclose(scores[2], 2/3)
 
 def test_sokal():
     X, y = X_y_sample_1()
-    sokal = SBFL(formula='Sokal')
-    sokal.fit(X, y)
-    scores = sokal.scores_
+    sbfl = SBFL(formula='Sokal')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert_allclose(scores[1], 1/2)
     assert_allclose(scores[2], 4/5)
 
 def test_m1():
     X, y = X_y_sample_1()
-    m1 = SBFL(formula='M1')
-    m1.fit(X, y)
-    scores = m1.scores_
+    sbfl = SBFL(formula='M1')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert_allclose(scores[1], 1/2)
     assert scores[2] == 2
 
 def test_m2():
     X, y = X_y_sample_1()
-    m2 = SBFL(formula='M2')
-    m2.fit(X, y)
-    scores = m2.scores_
+    sbfl = SBFL(formula='M2')
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert_allclose(scores[2], 1/4)
 
 def test_er1a():
     X, y = X_y_sample_1()
-    er1a = SBFL(formula="ER1a")
-    er1a.fit(X, y)
-    scores = er1a.scores_
+    sbfl = SBFL(formula="ER1a")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == -1
     assert scores[1] == -1
     assert scores[2] == 1
 
 def test_er1b():
     X, y = X_y_sample_1()
-    er1b = SBFL(formula="ER1b")
-    er1b.fit(X, y)
-    scores = er1b.scores_
+    sbfl = SBFL(formula="ER1b")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert_allclose(scores[0], -2/3)
     assert_allclose(scores[1], -1/3)
     assert_allclose(scores[2], 2/3)
 
 def test_wong1():
     X, y = X_y_sample_1()
-    wong1 = SBFL(formula="Wong1")
-    wong1.fit(X, y)
-    scores = wong1.scores_
+    sbfl = SBFL(formula="Wong1")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0
     assert scores[1] == 0
     assert scores[2] == 1
 
 def test_wong2():
     X, y = X_y_sample_1()
-    wong2 = SBFL(formula="Wong2")
-    wong2.fit(X, y)
-    scores = wong2.scores_
+    sbfl = SBFL(formula="Wong2")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == -2
     assert scores[1] == -1
     assert scores[2] == 0
 
 def test_wong3():
     X, y = X_y_sample_1()
-    wong3 = SBFL(formula="Wong3")
-    wong3.fit(X, y)
-    scores = wong3.scores_
+    sbfl = SBFL(formula="Wong3")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == -2
     assert scores[1] == -1
     assert scores[2] == 0
@@ -196,18 +196,18 @@ def test_wong3():
 
 def test_dstar2():
     X, y = X_y_sample_1()
-    dstar2 = SBFL(formula="Dstar2")
-    dstar2.fit(X, y)
-    scores = dstar2.scores_
+    sbfl = SBFL(formula="Dstar2")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert scores[0] == 0.0
     assert scores[1] == 0.0
     assert scores[2] == 1.0
 
 def test_gp02():
     X, y = X_y_sample_1()
-    gp02 = SBFL(formula="GP02")
-    gp02.fit(X, y)
-    scores = gp02.scores_
+    sbfl = SBFL(formula="GP02")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert_allclose(scores[0], 4.242641)
     assert_allclose(scores[1], 3.828427)
     assert_allclose(scores[2], 5.828427)
@@ -223,27 +223,27 @@ def test_gp02():
 
 def test_gp13():
     X, y = X_y_sample_1()
-    formula = SBFL(formula="GP13")
-    formula.fit(X, y)
-    scores = formula.scores_
+    sbfl = SBFL(formula="GP13")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert_allclose(scores[0], 0.0)
     assert_allclose(scores[1], 0.0)
     assert_allclose(scores[2], 4 / 3)
 
 def test_gp19():
     X, y = X_y_sample_1()
-    formula = SBFL(formula="GP19")
-    formula.fit(X, y)
-    scores = formula.scores_
+    sbfl = SBFL(formula="GP19")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert_allclose(scores[0], 0.0)
     assert_allclose(scores[1], 0.0)
     assert_allclose(scores[2], 1.0)
 
 def test_er5c():
     X, y = X_y_sample_1()
-    formula = SBFL(formula="ER5C")
-    formula.fit(X, y)
-    scores = formula.scores_
+    sbfl = SBFL(formula="ER5C")
+    sbfl.fit(X, y)
+    scores = sbfl.scores_
     assert_allclose(scores[0], 0.0)
     assert_allclose(scores[1], 0.0)
     assert_allclose(scores[2], 1.0)
