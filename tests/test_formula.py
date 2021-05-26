@@ -226,25 +226,24 @@ def test_gp13():
     sbfl = SBFL(formula="GP13")
     sbfl.fit(X, y)
     scores = sbfl.scores_
-    assert_allclose(scores[0], 0.0)
-    assert_allclose(scores[1], 0.0)
-    assert_allclose(scores[2], 4 / 3)
+    assert scores[0] == 0.0
+    assert scores[1] == 0.0
+    assert_allclose(scores[2], 4/3)
 
 def test_gp19():
     X, y = X_y_sample_1()
     sbfl = SBFL(formula="GP19")
     sbfl.fit(X, y)
     scores = sbfl.scores_
-    assert_allclose(scores[0], 0.0)
-    assert_allclose(scores[1], 0.0)
-    assert_allclose(scores[2], 1.0)
+    assert scores[0] == 0.0
+    assert scores[1] == 0.0
+    assert scores[2] == 1.0
 
 def test_er5c():
     X, y = X_y_sample_1()
     sbfl = SBFL(formula="ER5C")
     sbfl.fit(X, y)
     scores = sbfl.scores_
-    assert_allclose(scores[0], 0.0)
-    assert_allclose(scores[1], 0.0)
-    assert_allclose(scores[2], 1.0)
-
+    assert scores[0] == 0.0
+    assert scores[1] == 0.0
+    assert scores[2] == 1.0
