@@ -41,13 +41,19 @@ def M1(e_p, n_p, e_f, n_f):
 def M2(e_p, n_p, e_f, n_f):
     return e_f/(e_f + n_p + 2 * n_f + 2 * e_p)
 
-def Op2(e_p, n_p, e_f, n_f):
-    return e_f - e_p / (e_p + n_p + 1.0)
-
-def Op1(e_p, n_p, e_f, n_f):
+def ER1a(e_p, n_p, e_f, n_f):
     scores = n_p
     scores[n_f > 0] = -1
     return scores
+
+def ER1b(e_p, n_p, e_f, n_f):
+    return e_f - e_p / (e_p + n_p + 1.0)
+
+def Op1(e_p, n_p, e_f, n_f):
+    return ER1a(e_p, n_p, e_f, n_f)
+
+def Op2(e_p, n_p, e_f, n_f):
+    return ER1b(e_p, n_p, e_f, n_f)
 
 def Wong1(e_p, n_p, e_f, n_f):
     return e_f
@@ -65,5 +71,23 @@ def Wong3(e_p, n_p, e_f, n_f):
 
     return e_f - h
 
-# def Ample(e_p, n_p, e_f, n_f):
-#     return abs(e_f / (e_f + n_f) - e_p / (e_p + n_p))
+def Ample(e_p, n_p, e_f, n_f):
+    return np.absolute(e_f / (e_f + n_f) - e_p / (e_p + n_p))
+
+def Dstar2(e_p, n_p, e_f, n_f):
+    return np.power(e_f, 2) / (e_p + n_f)
+
+def GP02(e_p, n_p, e_f, n_f):
+    return 2 * (e_f + np.sqrt(e_p + n_p)) + np.sqrt(e_p)
+
+def GP03(e_p, n_p, e_f, n_f):
+    return np.sqrt(np.absolute(np.power(e_f, 2) - np.sqrt(e_p)))
+
+def GP13(e_p, n_p, e_f, n_f):
+    return e_f * (1 + 1 / (2 * e_p + e_f))
+
+def GP19(e_p, n_p, e_f, n_f):
+    return e_f * np.sqrt(np.absolute(e_p - e_f + n_f - n_p))
+
+def ER5C(e_p, n_p, e_f, n_f):
+    return (n_f == 0).astype(float)
