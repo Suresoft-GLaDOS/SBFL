@@ -99,15 +99,15 @@ def Goodman(e_p, n_p, e_f, n_f):
     return (2 * e_f - n_f - e_p) / (2 * e_f + n_f + e_p)
 
 def Zoltar(e_p, n_p, e_f, n_f):
-    scores = e_f
-    nz = e_f != 0
-    scores[nz] = e_f[nz] / (e_f[nz] + n_f[nz] + e_p[nz] + 10000 * n_f[nz] * e_p[nz] / e_f[nz])
+    scores = e_f.astype(float)
+    cond = e_f != 0
+    scores[cond] = e_f[cond] / (e_f[cond] + n_f[cond] + e_p[cond] + 10000 * n_f[cond] * e_p[cond] / e_f[cond])
     return scores
 
 def Ochiai2(e_p, n_p, e_f, n_f):
     scores = np.zeros(len(e_f))
     cond = (e_f != 0) & (n_p != 0)
-    scores[cond] = e_f[cond] * n_p[cond] / np.sqrt((e_f[cond] + e_p[cond]) * (n_f[cond] + n_p[cond]) * (e_f[cond] * n_p[cond]) * (n_f[cond] + e_p[cond]))
+    scores[cond] = e_f[cond] * n_p[cond] / np.sqrt((e_f[cond] + e_p[cond]) * (n_f[cond] + n_p[cond]) * (e_f[cond] + n_p[cond]) * (n_f[cond] + e_p[cond]))
     return scores
 
 def Anderberg(e_p, n_p, e_f, n_f):

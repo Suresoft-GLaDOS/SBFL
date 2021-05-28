@@ -273,7 +273,7 @@ def test_zoltar():
     scores = formula.scores_
     assert scores[0] == 0.0
     assert scores[1] == 0.0
-    assert scores[2] == 0.0
+    assert_allclose(scores[2], 1 / 2)
     
 def test_ochiai2():
     X, y = X_y_sample_1()
@@ -282,7 +282,7 @@ def test_ochiai2():
     scores = formula.scores_
     assert scores[0] == 0
     assert scores[1] == 0
-    assert_allclose(scores[2], 1/np.sqrt(2))
+    assert_allclose(scores[2], 1 / 2)
 
 def test_anderberg():
     X, y = X_y_sample_1()
