@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from sbfl.base import SBFL
+from sbfl.diagnosability import DDU
 
 if __name__ == "__main__":
     X = np.array([
@@ -14,6 +15,8 @@ if __name__ == "__main__":
         0, # t1: FAIL
         1  # t2: PASS
     ], dtype=bool)
+
+    print(f"DDU: {DDU(X)}")
 
     """
     Calculate the suspiciousness scores
