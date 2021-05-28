@@ -17,7 +17,7 @@ class SBFL:
     def __init__(self, formula='Ochiai'):
         supported_formulae = dict(getmembers(sbfl_formula, isfunction))
         if formula not in supported_formulae:
-            raise NotSupportedFormulaError(f"Supported formulae: {supported_formulae}")
+            raise NotSupportedFormulaError(f"Supported formulae: {set(supported_formulae.keys())}")
 
         self.formula = formula
         self.formula_func = supported_formulae[formula]
