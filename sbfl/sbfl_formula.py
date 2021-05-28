@@ -123,4 +123,4 @@ def Euclid(e_p, n_p, e_f, n_f):
     return np.sqrt(e_f + n_p)
 
 def Overlap(e_p, n_p, e_f, n_f):
-    return e_f / np.minimum(e_f, np.minimum(e_p, n_f))
+    return e_f / np.min(e_f, e_p, n_f)
