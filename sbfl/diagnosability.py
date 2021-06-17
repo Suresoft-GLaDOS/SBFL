@@ -2,11 +2,9 @@ import numpy as np
 
 def diversity(X):
     N, _ = X.shape
-    _, counts = np.unique(X, axis=0, return_counts=True)
+    _, counts = np.unique(X > 0, axis=0, return_counts=True)
     if N > 1:
-        value = sum([ n * (n - 1) for n in counts ])
-        value /= N * (N - 1)
-        value = 1 - value
+        value = 1 - (counts * (counts - 1)).sum()/(N * (N - 1))
     else:
         value = 1.
     assert 0 <= value <= 1
@@ -14,13 +12,13 @@ def diversity(X):
 
 def density(X):
     N, M = X.shape
-    value = np.sum(X) / (N * M)
+    value = np.sum(X > 0) / (N * M)
     assert 0 <= value <= 1
     return value
 
 def uniqueness(X):
     _, M = X.shape
-    unique_elems = np.unique(X, axis=1)
+    unique_elems = np.unique(X > 0, axis=1)
     value = unique_elems.shape[1] / M
     assert 0 <= value <= 1
     return value
