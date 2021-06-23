@@ -3,9 +3,6 @@ import pytest
 from numpy.testing import assert_allclose
 from sbfl.base import SBFL
 
-def assert_equal(s1, s2, error=1e-05):
-    return pytest.approx(s1, error) == s2
-
 def X_y_sample_1():
     X = np.array([
         [1,0,1],
