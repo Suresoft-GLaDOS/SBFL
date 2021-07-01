@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from . import base
 
 def parse_gcov_line(l):
     """
@@ -47,7 +48,7 @@ def read_gcov(path_to_file, only_coverable=True):
     assert source is not None
     return source, coverage
         
-def gcov_files_to_df(gcov_files, only_coverable=True):
+def gcov_files_to_frame(gcov_files, only_coverable=True, only_covered=False):
     """
     Convert test cases' coverage data (list of .gcov files)
     to a pandas DataFrame format coverage matrix
@@ -91,13 +92,25 @@ def gcov_files_to_df(gcov_files, only_coverable=True):
     df = pd.DataFrame(
         data, index=pd.MultiIndex.from_tuples(index, names=['source', 'line']), columns=columns)
     
+    if only_covered:
+        covered = df.values.sum(axis=1) > 0
+        return df.iloc[covered]
+
     return df
 
-if __name__ == "__main__":
-    # for debugging
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    df = gcov_files_to_df({
-        't20': [os.path.join(project_root, 'sample/f1_f5/t20.gcov')],
-        't40': [os.path.join(project_root, 'sample/f1_f5/t40.gcov')]
-    }, only_coverable=True)
-    print(df)
+def get_sbfl_scores_from_frame(cov_df, failing_tests, sbfl=None):
+    """
+    Calculate sbfl scores from the coverage-matrix dataframe `cov_df` and `failing_tests`
+
+    - cov_df: a pandas DataFrame format coverage matrix
+        - index: source, line number (two-level)
+        - column: test case name
+    - failing_tests: Iterable
+    """
+    assert all([t in cov_df.columns for t in failing_tests])
+    X, y = cov_df.values.T > 0, cov_df.columns.isin(failing_tests)
+
+    if sbfl is None:
+        sbfl = base.SBFL()
+    sbfl.fit(X, y)
+    return sbfl.to_frame(index=cov_df.index)
