@@ -2,9 +2,16 @@ import os
 import pandas as pd
 from . import base
 
-def parse_gcov_line(l):
-    """
-    Parse each line in gcov file
+def parse_gcov_line(l: str) -> tuple:
+    """Parses each line in gcov file
+
+    Parameter
+    ----------
+    l : str
+
+    Returns
+    -------
+    tuple (str, int, str)
     """
     l_split = l.split(':')
 
@@ -15,13 +22,22 @@ def parse_gcov_line(l):
 
     return hits, lineno, content
 
-def read_gcov(path_to_file, only_coverable=True):
-    """
-    Return a tuple of source file name and line coverage data
-    - line coverage data: dict(lineno: hits)
-        -   -1: not coverable (hits == '-')
-        -    0: coverable, but not covered (hits == '#####')
-        -  > 0: coverable and covered (hits == <number>)
+def read_gcov(path_to_file, only_coverable=True) -> dict:
+    """ Parses a gcov file
+
+    Parameters
+    ----------
+    path_to_file : str or path-like object pointing to a file
+    only_coverable : bool, optional
+
+    Returns
+    -------
+    tuple (str, dict)
+        a tuple of source file name and dict-type line coverage data
+        line coverage data: dict(lineno: hits)
+            -   -1: not coverable (hits == '-')
+            -    0: coverable, but not covered (hits == '#####')
+            -  > 0: coverable and covered (hits == <number>)
     """
     source = None
     coverage = {}
@@ -48,13 +64,23 @@ def read_gcov(path_to_file, only_coverable=True):
     assert source is not None
     return source, coverage
         
-def gcov_files_to_frame(gcov_files, only_coverable=True, only_covered=False):
-    """
-    Convert test cases' coverage data (list of .gcov files)
-    to a pandas DataFrame format coverage matrix
-    - index: source, line number (two-level)
-    - column: test case name
+def gcov_files_to_frame(gcov_files: dict, only_coverable=True, only_covered=False):
+    """ Converts gcov files to a coverage matrix
     
+    Parameters
+    ----------
+    gcov_files : dict
+        the mapping from a test name to a list of gcov files
+    only_coverable : bool, optional
+    only_covered : bool, optional
+
+    Returns
+    -------
+    pd.Dataframe
+        a pandas dataframe representing the coverage matrix
+        whose index is two-level(source, line number)
+        and column is test case name
+
     Q. What's Multi-index?: https://pandas.pydata.org/docs/reference/api/pandas.MultiIndex.html
     """
 
@@ -62,7 +88,8 @@ def gcov_files_to_frame(gcov_files, only_coverable=True, only_covered=False):
     coverage = {}
     for test in gcov_files:
         for path_to_file in gcov_files[test]:
-            source, line_coverage = read_gcov(path_to_file, only_coverable=only_coverable)
+            source, line_coverage = read_gcov(
+                path_to_file, only_coverable=only_coverable)
 
             if source not in coverage:
                 coverage[source] = {}
@@ -90,7 +117,8 @@ def gcov_files_to_frame(gcov_files, only_coverable=True, only_covered=False):
 
     # create dataframe
     df = pd.DataFrame(
-        data, index=pd.MultiIndex.from_tuples(index, names=['source', 'line']), columns=columns)
+        data, index=pd.MultiIndex.from_tuples(index,
+                names=['source', 'line']), columns=columns)
     
     if only_covered:
         covered = df.values.sum(axis=1) > 0
@@ -100,12 +128,24 @@ def gcov_files_to_frame(gcov_files, only_coverable=True, only_covered=False):
 
 def get_sbfl_scores_from_frame(cov_df, failing_tests, sbfl=None):
     """
-    Calculate sbfl scores from the coverage-matrix dataframe `cov_df` and `failing_tests`
+    Calculates sbfl scores from the coverage-matrix dataframe `cov_df` and `failing_tests`
 
-    - cov_df: a pandas DataFrame format coverage matrix
-        - index: source, line number (two-level)
-        - column: test case name
-    - failing_tests: Iterable
+    Parameters
+    ----------
+    cov_df : pd.Dataframe
+        a pandas DataFrame format coverage matrix
+        index: source, line number (two-level)
+        column: test case name
+    failing_tests: Iterable (set or list)
+        a list/set of failing test names 
+    sbfl: SBFL, optional
+        SBFL-type instance
+    
+    Returns
+    -------
+    pd.Dataframe
+        a pandas dataframe representing the SBFL scores
+        that has only one column, score
     """
     assert all([t in cov_df.columns for t in failing_tests])
     X, y = cov_df.values.T > 0, cov_df.columns.isin(failing_tests)
