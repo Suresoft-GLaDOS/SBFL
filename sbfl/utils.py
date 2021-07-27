@@ -1,6 +1,11 @@
 import os
+import re
 import pandas as pd
 from . import base
+
+def is_line_coverage(l: str) -> bool:
+    m = re.match(r"^\s+\S+:\s+\d+:", l)
+    return m is not None
 
 def parse_gcov_line(l: str) -> tuple:
     """Parses each line in gcov file
@@ -43,6 +48,9 @@ def read_gcov(path_to_file, only_coverable=True) -> dict:
     coverage = {}
     with open(path_to_file, 'r') as gcov_file:
         for l in gcov_file:
+            if not is_line_coverage(l):
+                continue
+
             hits, lineno, content = parse_gcov_line(l)
 
             if lineno == 0:
@@ -61,7 +69,9 @@ def read_gcov(path_to_file, only_coverable=True) -> dict:
             else:
                 coverage[lineno] = int(hits)
 
-    assert source is not None
+    if source is None:
+        raise Exception(f"Unable to parse {path_to_file}")
+
     return source, coverage
         
 def gcov_files_to_frame(gcov_files: dict, only_coverable=True, only_covered=False):

@@ -1,0 +1,272 @@
+        -:    0:Source:proc/linux.c
+        -:    0:Graph:/home/workspace/libyara/proc/.libs/linux.gcno
+        -:    0:Data:/home/workspace/libyara/proc/.libs/linux.gcda
+        -:    0:Runs:1
+        -:    0:Programs:1
+        -:    1:/*
+        -:    2:Copyright (c) 2007-2017. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#if defined(USE_LINUX_PROC)
+        -:   31:
+        -:   32:#include <fcntl.h>
+        -:   33:#include <inttypes.h>
+        -:   34:#include <unistd.h>
+        -:   35:#include <sys/types.h>
+        -:   36:#include <sys/ptrace.h>
+        -:   37:#include <sys/wait.h>
+        -:   38:#include <errno.h>
+        -:   39:
+        -:   40:#if defined(__NetBSD__) || defined(__DragonFly__) || defined(__FreeBSD_kernel__)
+        -:   41:#define PTRACE_ATTACH PT_ATTACH
+        -:   42:#define PTRACE_DETACH PT_DETACH
+        -:   43:#define _XOPEN_SOURCE 500
+        -:   44:#endif
+        -:   45:
+        -:   46:#include <yara/error.h>
+        -:   47:#include <yara/proc.h>
+        -:   48:#include <yara/mem.h>
+        -:   49:
+        -:   50:
+        -:   51:typedef struct _YR_PROC_INFO {
+        -:   52:  int             pid;
+        -:   53:  int             mem_fd;
+        -:   54:  FILE*           maps;
+        -:   55:} YR_PROC_INFO;
+        -:   56:
+        -:   57:
+function _yr_process_attach called 0 returned 0% blocks executed 0%
+    #####:   58:int _yr_process_attach(
+        -:   59:    int pid,
+        -:   60:    YR_PROC_ITERATOR_CTX* context)
+        -:   61:{
+        -:   62:  int status;
+        -:   63:  char buffer[256];
+        -:   64:
+    #####:   65:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) yr_malloc(sizeof(YR_PROC_INFO));
+call    0 never executed
+        -:   66:
+    #####:   67:  if (proc_info == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:   68:    return ERROR_INSUFFICIENT_MEMORY;
+        -:   69:
+    #####:   70:  context->proc_info = proc_info;
+        -:   71:
+    #####:   72:  proc_info->pid = pid;
+    #####:   73:  proc_info->maps = NULL;
+    #####:   74:  proc_info->mem_fd = -1;
+        -:   75:
+        -:   76:  snprintf(buffer, sizeof(buffer), "/proc/%u/maps", pid);
+    #####:   77:  proc_info->maps = fopen(buffer, "r");
+call    0 never executed
+        -:   78:
+    #####:   79:  if (proc_info->maps == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:   80:  {
+    #####:   81:    yr_free(proc_info);
+call    0 never executed
+    #####:   82:    return ERROR_COULD_NOT_ATTACH_TO_PROCESS;
+        -:   83:  }
+        -:   84:
+        -:   85:  snprintf(buffer, sizeof(buffer), "/proc/%u/mem", pid);
+    #####:   86:  proc_info->mem_fd = open(buffer, O_RDONLY);
+        -:   87:
+    #####:   88:  if (proc_info->mem_fd == -1)
+branch  0 never executed
+branch  1 never executed
+        -:   89:  {
+    #####:   90:    fclose(proc_info->maps);
+call    0 never executed
+    #####:   91:    proc_info->maps = NULL;
+        -:   92:
+    #####:   93:    yr_free(proc_info);
+call    0 never executed
+        -:   94:
+    #####:   95:    return ERROR_COULD_NOT_ATTACH_TO_PROCESS;
+        -:   96:  }
+        -:   97:
+    #####:   98:  if (ptrace(PTRACE_ATTACH, pid, NULL, 0) == -1)
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+        -:   99:  {
+    #####:  100:    fclose(proc_info->maps);
+call    0 never executed
+    #####:  101:    proc_info->maps = NULL;
+        -:  102:
+    #####:  103:    close(proc_info->mem_fd);
+call    0 never executed
+    #####:  104:    proc_info->mem_fd = -1;
+        -:  105:
+    #####:  106:    yr_free(proc_info);
+call    0 never executed
+        -:  107:
+    #####:  108:    return ERROR_COULD_NOT_ATTACH_TO_PROCESS;
+        -:  109:  }
+        -:  110:
+    #####:  111:  status = 0;
+        -:  112:
+    #####:  113:  if (waitpid(pid, &status, 0) == -1)
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+        -:  114:  {
+        -:  115:    // this is a strange error state where we attached but the proc didn't
+        -:  116:    // stop. Try to detach and clean up.
+    #####:  117:    ptrace(PTRACE_DETACH, proc_info->pid, NULL, 0);
+call    0 never executed
+        -:  118:
+    #####:  119:    fclose(proc_info->maps);
+call    0 never executed
+    #####:  120:    proc_info->maps = NULL;
+        -:  121:
+    #####:  122:    close(proc_info->mem_fd);
+call    0 never executed
+    #####:  123:    proc_info->mem_fd = -1;
+        -:  124:
+    #####:  125:    yr_free(proc_info);
+call    0 never executed
+        -:  126:
+    #####:  127:    return ERROR_COULD_NOT_ATTACH_TO_PROCESS;
+        -:  128:  }
+        -:  129:
+        -:  130:  return ERROR_SUCCESS;
+        -:  131:}
+        -:  132:
+        -:  133:
+function _yr_process_detach called 0 returned 0% blocks executed 0%
+    #####:  134:int _yr_process_detach(
+        -:  135:    YR_PROC_ITERATOR_CTX* context)
+        -:  136:{
+    #####:  137:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) context->proc_info;
+        -:  138:
+    #####:  139:  fclose(proc_info->maps);
+call    0 never executed
+    #####:  140:  close(proc_info->mem_fd);
+call    0 never executed
+    #####:  141:  ptrace(PTRACE_DETACH, proc_info->pid, NULL, 0);
+call    0 never executed
+        -:  142:
+    #####:  143:  return ERROR_SUCCESS;
+        -:  144:}
+        -:  145:
+        -:  146:
+function yr_process_fetch_memory_block_data called 0 returned 0% blocks executed 0%
+    #####:  147:YR_API const uint8_t* yr_process_fetch_memory_block_data(
+        -:  148:    YR_MEMORY_BLOCK* block)
+        -:  149:{
+    #####:  150:  YR_PROC_ITERATOR_CTX* context = (YR_PROC_ITERATOR_CTX*) block->context;
+    #####:  151:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) context->proc_info;
+        -:  152:
+    #####:  153:  if (context->buffer_size < block->size)
+branch  0 never executed
+branch  1 never executed
+        -:  154:  {
+    #####:  155:    if (context->buffer != NULL)
+branch  0 never executed
+branch  1 never executed
+    #####:  156:      yr_free((void*) context->buffer);
+call    0 never executed
+        -:  157:
+    #####:  158:    context->buffer = (const uint8_t*) yr_malloc(block->size);
+call    0 never executed
+        -:  159:
+    #####:  160:    if (context->buffer != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  161:    {
+    #####:  162:      context->buffer_size = block->size;
+        -:  163:    }
+        -:  164:    else
+        -:  165:    {
+    #####:  166:      context->buffer_size = 0;
+    #####:  167:      return NULL;
+        -:  168:    }
+        -:  169:  }
+        -:  170:
+    #####:  171:  if (pread(proc_info->mem_fd,
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+    #####:  172:            (void *) context->buffer,
+        -:  173:            block->size,
+    #####:  174:            block->base) == -1)
+        -:  175:  {
+        -:  176:    return NULL;
+        -:  177:  }
+        -:  178:
+    #####:  179:  return context->buffer;
+        -:  180:}
+        -:  181:
+        -:  182:
+function yr_process_get_next_memory_block called 0 returned 0% blocks executed 0%
+    #####:  183:YR_API YR_MEMORY_BLOCK* yr_process_get_next_memory_block(
+        -:  184:    YR_MEMORY_BLOCK_ITERATOR* iterator)
+        -:  185:{
+    #####:  186:  YR_PROC_ITERATOR_CTX* context = (YR_PROC_ITERATOR_CTX*) iterator->context;
+    #####:  187:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) context->proc_info;
+        -:  188:
+        -:  189:  char buffer[256];
+        -:  190:  uint64_t begin, end;
+        -:  191:
+    #####:  192:  if (fgets(buffer, sizeof(buffer), proc_info->maps) != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  193:  {
+    #####:  194:    sscanf(buffer, "%"SCNx64"-%"SCNx64, &begin, &end);
+        -:  195:
+    #####:  196:    context->current_block.base = begin;
+    #####:  197:    context->current_block.size = end - begin;
+        -:  198:
+    #####:  199:    return &context->current_block;
+        -:  200:  }
+        -:  201:
+        -:  202:  return NULL;
+        -:  203:}
+        -:  204:
+        -:  205:
+function yr_process_get_first_memory_block called 0 returned 0% blocks executed 0%
+    #####:  206:YR_API YR_MEMORY_BLOCK* yr_process_get_first_memory_block(
+        -:  207:    YR_MEMORY_BLOCK_ITERATOR* iterator)
+        -:  208:{
+    #####:  209:  YR_PROC_ITERATOR_CTX* context = (YR_PROC_ITERATOR_CTX*) iterator->context;
+    #####:  210:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) context->proc_info;
+        -:  211:
+    #####:  212:  if (fseek(proc_info->maps, 0, SEEK_SET) != 0)
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+        -:  213:    return NULL;
+        -:  214:
+    #####:  215:  return yr_process_get_next_memory_block(iterator);
+call    0 never executed
+        -:  216:}
+        -:  217:
+        -:  218:#endif
