@@ -1,0 +1,851 @@
+        -:    0:Source:scanner.c
+        -:    0:Graph:/home/workspace/libyara/.libs/scanner.gcno
+        -:    0:Data:/home/workspace/libyara/.libs/scanner.gcda
+        -:    0:Runs:1
+        -:    0:Programs:1
+        -:    1:/*
+        -:    2:Copyright (c) 2018. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <yara/ahocorasick.h>
+        -:   31:#include <yara/error.h>
+        -:   32:#include <yara/exec.h>
+        -:   33:#include <yara/exefiles.h>
+        -:   34:#include <yara/mem.h>
+        -:   35:#include <yara/object.h>
+        -:   36:#include <yara/proc.h>
+        -:   37:#include <yara/scanner.h>
+        -:   38:#include <yara/types.h>
+        -:   39:#include <yara/libyara.h>
+        -:   40:
+        -:   41:#include "exception.h"
+        -:   42:
+        -:   43:
+function _yr_scanner_scan_mem_block.isra.0 called 0 returned 0% blocks executed 0%
+    #####:   44:static int _yr_scanner_scan_mem_block(
+        -:   45:    YR_SCANNER* scanner,
+        -:   46:    const uint8_t* block_data,
+        -:   47:    YR_MEMORY_BLOCK* block)
+        -:   48:{
+    #####:   49:  YR_RULES* rules = scanner->rules;
+    #####:   50:  YR_AC_TRANSITION_TABLE transition_table = rules->ac_transition_table;
+    #####:   51:  YR_AC_MATCH_TABLE match_table = rules->ac_match_table;
+        -:   52:
+        -:   53:  YR_AC_MATCH* match;
+        -:   54:  YR_AC_TRANSITION transition;
+        -:   55:
+        -:   56:  size_t i = 0;
+        -:   57:  uint32_t state = YR_AC_ROOT_STATE;
+        -:   58:  uint16_t index;
+        -:   59:
+    #####:   60:  while (i < block->size)
+branch  0 never executed
+branch  1 never executed
+        -:   61:  {
+    #####:   62:    match = match_table[state].match;
+        -:   63:
+    #####:   64:    if (i % 4096 == 0 && scanner->timeout > 0)
+branch  0 never executed
+branch  1 never executed
+branch  2 never executed
+branch  3 never executed
+        -:   65:    {
+    #####:   66:      if (yr_stopwatch_elapsed_us(&scanner->stopwatch) > scanner->timeout)
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+        -:   67:        return ERROR_SCAN_TIMEOUT;
+        -:   68:    }
+        -:   69:
+    #####:   70:    while (match != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:   71:    {
+    #####:   72:      if (match->backtrack <= i)
+branch  0 never executed
+branch  1 never executed
+        -:   73:      {
+    #####:   74:        FAIL_ON_ERROR(yr_scan_verify_match(
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+        -:   75:            scanner,
+        -:   76:            match,
+        -:   77:            block_data,
+        -:   78:            block->size,
+        -:   79:            block->base,
+        -:   80:            i - match->backtrack));
+        -:   81:      }
+        -:   82:
+    #####:   83:      match = match->next;
+        -:   84:    }
+        -:   85:
+    #####:   86:    index = block_data[i++] + 1;
+    #####:   87:    transition = transition_table[state + index];
+        -:   88:
+    #####:   89:    while (YR_AC_INVALID_TRANSITION(transition, index))
+branch  0 never executed
+branch  1 never executed
+        -:   90:    {
+    #####:   91:      if (state != YR_AC_ROOT_STATE)
+branch  0 never executed
+branch  1 never executed
+        -:   92:      {
+    #####:   93:        state = YR_AC_NEXT_STATE(transition_table[state]);
+    #####:   94:        transition = transition_table[state + index];
+        -:   95:      }
+        -:   96:      else
+        -:   97:      {
+        -:   98:        transition = 0;
+        -:   99:        break;
+        -:  100:      }
+        -:  101:    }
+        -:  102:
+    #####:  103:    state = YR_AC_NEXT_STATE(transition);
+        -:  104:  }
+        -:  105:
+    #####:  106:  match = match_table[state].match;
+        -:  107:
+    #####:  108:  while (match != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  109:  {
+    #####:  110:    if (match->backtrack <= i)
+branch  0 never executed
+branch  1 never executed
+        -:  111:    {
+    #####:  112:      FAIL_ON_ERROR(yr_scan_verify_match(
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+        -:  113:          scanner,
+        -:  114:          match,
+        -:  115:          block_data,
+        -:  116:          block->size,
+        -:  117:          block->base,
+        -:  118:          i - match->backtrack));
+        -:  119:    }
+        -:  120:
+    #####:  121:    match = match->next;
+        -:  122:  }
+        -:  123:
+        -:  124:  return ERROR_SUCCESS;
+        -:  125:}
+        -:  126:
+        -:  127:
+function _yr_scanner_clean_matches called 0 returned 0% blocks executed 0%
+    #####:  128:static void _yr_scanner_clean_matches(
+        -:  129:    YR_SCANNER* scanner)
+        -:  130:{
+        -:  131:  YR_RULE* rule;
+        -:  132:  YR_STRING** string;
+        -:  133:
+    #####:  134:  int tidx = scanner->tidx;
+        -:  135:
+    #####:  136:  yr_rules_foreach(scanner->rules, rule)
+branch  0 never executed
+branch  1 never executed
+        -:  137:  {
+    #####:  138:    rule->t_flags[tidx] &= ~RULE_TFLAGS_MATCH;
+    #####:  139:    rule->ns->t_flags[tidx] &= ~NAMESPACE_TFLAGS_UNSATISFIED_GLOBAL;
+        -:  140:  }
+        -:  141:
+    #####:  142:  if (scanner->matching_strings_arena != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  143:  {
+    #####:  144:    string = (YR_STRING**) yr_arena_base_address(
+call    0 never executed
+        -:  145:        scanner->matching_strings_arena);
+        -:  146:
+    #####:  147:    while (string != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  148:    {
+    #####:  149:      (*string)->matches[tidx].count = 0;
+    #####:  150:      (*string)->matches[tidx].head = NULL;
+    #####:  151:      (*string)->matches[tidx].tail = NULL;
+    #####:  152:      (*string)->unconfirmed_matches[tidx].count = 0;
+    #####:  153:      (*string)->unconfirmed_matches[tidx].head = NULL;
+    #####:  154:      (*string)->unconfirmed_matches[tidx].tail = NULL;
+        -:  155:
+    #####:  156:      string = (YR_STRING**) yr_arena_next_address(
+call    0 never executed
+        -:  157:          scanner->matching_strings_arena,
+        -:  158:          string,
+        -:  159:          sizeof(YR_STRING*));
+        -:  160:    }
+        -:  161:  }
+    #####:  162:}
+        -:  163:
+        -:  164:
+function yr_scanner_create called 0 returned 0% blocks executed 0%
+    #####:  165:YR_API int yr_scanner_create(
+        -:  166:    YR_RULES* rules,
+        -:  167:    YR_SCANNER** scanner)
+        -:  168:{
+        -:  169:  YR_EXTERNAL_VARIABLE* external;
+        -:  170:  YR_SCANNER* new_scanner;
+        -:  171:
+    #####:  172:  new_scanner = (YR_SCANNER*) yr_calloc(1, sizeof(YR_SCANNER));
+call    0 never executed
+        -:  173:
+    #####:  174:  if (new_scanner == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  175:    return ERROR_INSUFFICIENT_MEMORY;
+        -:  176:
+    #####:  177:  FAIL_ON_ERROR_WITH_CLEANUP(
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+call    3 never executed
+        -:  178:      yr_hash_table_create(64, &new_scanner->objects_table),
+        -:  179:      yr_scanner_destroy(new_scanner));
+        -:  180:
+    #####:  181:  external = rules->externals_list_head;
+        -:  182:
+    #####:  183:  while (!EXTERNAL_VARIABLE_IS_NULL(external))
+branch  0 never executed
+branch  1 never executed
+branch  2 never executed
+branch  3 never executed
+        -:  184:  {
+        -:  185:    YR_OBJECT* object;
+        -:  186:
+    #####:  187:    FAIL_ON_ERROR_WITH_CLEANUP(
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+call    3 never executed
+        -:  188:        yr_object_from_external_variable(external, &object),
+        -:  189:        yr_scanner_destroy(new_scanner));
+        -:  190:
+    #####:  191:    FAIL_ON_ERROR_WITH_CLEANUP(
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+call    3 never executed
+        -:  192:        yr_hash_table_add(
+        -:  193:            new_scanner->objects_table,
+        -:  194:            external->identifier,
+        -:  195:            NULL,
+        -:  196:            (void*) object),
+        -:  197:        yr_scanner_destroy(new_scanner));
+        -:  198:
+    #####:  199:    external++;
+        -:  200:  }
+        -:  201:
+    #####:  202:  new_scanner->rules = rules;
+    #####:  203:  new_scanner->tidx = -1;
+    #####:  204:  new_scanner->entry_point = UNDEFINED;
+        -:  205:
+    #####:  206:  *scanner = new_scanner;
+        -:  207:
+    #####:  208:  return ERROR_SUCCESS;
+        -:  209:}
+        -:  210:
+        -:  211:
+function yr_scanner_destroy called 0 returned 0% blocks executed 0%
+    #####:  212:YR_API void yr_scanner_destroy(
+        -:  213:    YR_SCANNER* scanner)
+        -:  214:{
+        -:  215:  RE_FIBER* fiber;
+        -:  216:  RE_FIBER* next_fiber;
+        -:  217:
+    #####:  218:  fiber = scanner->re_fiber_pool.fibers.head;
+        -:  219:
+    #####:  220:  while (fiber != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  221:  {
+    #####:  222:    next_fiber = fiber->next;
+    #####:  223:    yr_free(fiber);
+call    0 never executed
+        -:  224:    fiber = next_fiber;
+        -:  225:  }
+        -:  226:
+    #####:  227:  if (scanner->objects_table != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  228:  {
+    #####:  229:    yr_hash_table_destroy(
+call    0 never executed
+        -:  230:        scanner->objects_table,
+        -:  231:        (YR_HASH_TABLE_FREE_VALUE_FUNC) yr_object_destroy);
+        -:  232:  }
+        -:  233:
+    #####:  234:  yr_free(scanner);
+call    0 never executed
+    #####:  235:}
+        -:  236:
+        -:  237:
+function yr_scanner_set_callback called 0 returned 0% blocks executed 0%
+    #####:  238:YR_API void yr_scanner_set_callback(
+        -:  239:    YR_SCANNER* scanner,
+        -:  240:    YR_CALLBACK_FUNC callback,
+        -:  241:    void* user_data)
+        -:  242:{
+    #####:  243:  scanner->callback = callback;
+    #####:  244:  scanner->user_data = user_data;
+    #####:  245:}
+        -:  246:
+        -:  247:
+function yr_scanner_set_timeout called 0 returned 0% blocks executed 0%
+    #####:  248:YR_API void yr_scanner_set_timeout(
+        -:  249:    YR_SCANNER* scanner,
+        -:  250:    int timeout)
+        -:  251:{
+    #####:  252:  scanner->timeout = timeout * 1000000L;  // convert timeout to microseconds.
+    #####:  253:}
+        -:  254:
+        -:  255:
+function yr_scanner_set_flags called 0 returned 0% blocks executed 0%
+    #####:  256:YR_API void yr_scanner_set_flags(
+        -:  257:    YR_SCANNER* scanner,
+        -:  258:    int flags)
+        -:  259:{
+    #####:  260:  scanner->flags = flags;
+    #####:  261:}
+        -:  262:
+        -:  263:
+function yr_scanner_define_integer_variable called 0 returned 0% blocks executed 0%
+    #####:  264:YR_API int yr_scanner_define_integer_variable(
+        -:  265:    YR_SCANNER* scanner,
+        -:  266:    const char* identifier,
+        -:  267:    int64_t value)
+        -:  268:{
+    #####:  269:  YR_OBJECT* obj = (YR_OBJECT*) yr_hash_table_lookup(
+call    0 never executed
+        -:  270:      scanner->objects_table,
+        -:  271:      identifier,
+        -:  272:      NULL);
+        -:  273:
+    #####:  274:  if (obj == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  275:    return ERROR_INVALID_ARGUMENT;
+        -:  276:
+    #####:  277:  if (obj->type != OBJECT_TYPE_INTEGER)
+branch  0 never executed
+branch  1 never executed
+        -:  278:    return ERROR_INVALID_EXTERNAL_VARIABLE_TYPE;
+        -:  279:
+    #####:  280:  return yr_object_set_integer(value, obj, NULL);
+call    0 never executed
+        -:  281:}
+        -:  282:
+        -:  283:
+function yr_scanner_define_boolean_variable called 0 returned 0% blocks executed 0%
+    #####:  284:YR_API int yr_scanner_define_boolean_variable(
+        -:  285:    YR_SCANNER* scanner,
+        -:  286:    const char* identifier,
+        -:  287:    int value)
+        -:  288:{
+    #####:  289:  return yr_scanner_define_integer_variable(scanner, identifier, value);
+call    0 never executed
+        -:  290:}
+        -:  291:
+        -:  292:
+function yr_scanner_define_float_variable called 0 returned 0% blocks executed 0%
+    #####:  293:YR_API int yr_scanner_define_float_variable(
+        -:  294:    YR_SCANNER* scanner,
+        -:  295:    const char* identifier,
+        -:  296:    double value)
+        -:  297:{
+    #####:  298:  YR_OBJECT* obj = (YR_OBJECT*) yr_hash_table_lookup(
+call    0 never executed
+        -:  299:      scanner->objects_table,
+        -:  300:      identifier,
+        -:  301:      NULL);
+        -:  302:
+    #####:  303:  if (obj == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  304:    return ERROR_INVALID_ARGUMENT;
+        -:  305:
+    #####:  306:  if (obj->type != OBJECT_TYPE_FLOAT)
+branch  0 never executed
+branch  1 never executed
+        -:  307:    return ERROR_INVALID_EXTERNAL_VARIABLE_TYPE;
+        -:  308:
+    #####:  309:  return yr_object_set_float(value, obj, NULL);
+call    0 never executed
+        -:  310:}
+        -:  311:
+        -:  312:
+function yr_scanner_define_string_variable called 0 returned 0% blocks executed 0%
+    #####:  313:YR_API int yr_scanner_define_string_variable(
+        -:  314:    YR_SCANNER* scanner,
+        -:  315:    const char* identifier,
+        -:  316:    const char* value)
+        -:  317:{
+    #####:  318:  YR_OBJECT* obj = (YR_OBJECT*) yr_hash_table_lookup(
+call    0 never executed
+        -:  319:      scanner->objects_table,
+        -:  320:      identifier,
+        -:  321:      NULL);
+        -:  322:
+    #####:  323:  if (obj == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  324:    return ERROR_INVALID_ARGUMENT;
+        -:  325:
+    #####:  326:  if (obj->type != OBJECT_TYPE_STRING)
+branch  0 never executed
+branch  1 never executed
+        -:  327:    return ERROR_INVALID_EXTERNAL_VARIABLE_TYPE;
+        -:  328:
+    #####:  329:  return yr_object_set_string(value, strlen(value), obj, NULL);
+call    0 never executed
+        -:  330:}
+        -:  331:
+        -:  332:
+function yr_scanner_scan_mem_blocks called 0 returned 0% blocks executed 0%
+    #####:  333:YR_API int yr_scanner_scan_mem_blocks(
+        -:  334:    YR_SCANNER* scanner,
+        -:  335:    YR_MEMORY_BLOCK_ITERATOR* iterator)
+        -:  336:{
+        -:  337:  YR_RULES* rules;
+        -:  338:  YR_RULE* rule;
+        -:  339:  YR_MEMORY_BLOCK* block;
+        -:  340:
+    #####:  341:  int tidx = 0;
+        -:  342:  int result = ERROR_SUCCESS;
+        -:  343:
+    #####:  344:  if (scanner->callback == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  345:    return ERROR_CALLBACK_REQUIRED;
+        -:  346:
+    #####:  347:  scanner->iterator = iterator;
+    #####:  348:  rules = scanner->rules;
+    #####:  349:  block = iterator->first(iterator);
+call    0 never executed
+        -:  350:
+    #####:  351:  if (block == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  352:    return ERROR_SUCCESS;
+        -:  353:
+    #####:  354:  yr_mutex_lock(&rules->mutex);
+call    0 never executed
+        -:  355:
+    #####:  356:  while (tidx < YR_MAX_THREADS && YR_BITARRAY_TEST(rules->tidx_mask, tidx))
+branch  0 never executed
+branch  1 never executed
+branch  2 never executed
+branch  3 never executed
+        -:  357:  {
+    #####:  358:    tidx++;
+        -:  359:  }
+        -:  360:
+    #####:  361:  if (tidx < YR_MAX_THREADS)
+branch  0 never executed
+branch  1 never executed
+    #####:  362:    YR_BITARRAY_SET(rules->tidx_mask, tidx);
+        -:  363:  else
+        -:  364:    result = ERROR_TOO_MANY_SCAN_THREADS;
+        -:  365:
+    #####:  366:  yr_mutex_unlock(&rules->mutex);
+call    0 never executed
+        -:  367:
+    #####:  368:  if (result != ERROR_SUCCESS)
+branch  0 never executed
+branch  1 never executed
+        -:  369:    return result;
+        -:  370:
+    #####:  371:  scanner->tidx = tidx;
+    #####:  372:  scanner->file_size = block->size;
+        -:  373:
+    #####:  374:  yr_set_tidx(tidx);
+call    0 never executed
+        -:  375:
+    #####:  376:  result = yr_arena_create(1048576, 0, &scanner->matches_arena);
+call    0 never executed
+        -:  377:
+    #####:  378:  if (result != ERROR_SUCCESS)
+branch  0 never executed
+branch  1 never executed
+        -:  379:    goto _exit;
+        -:  380:
+    #####:  381:  result = yr_arena_create(4096, 0, &scanner->matching_strings_arena);
+call    0 never executed
+        -:  382:
+    #####:  383:  if (result != ERROR_SUCCESS)
+branch  0 never executed
+branch  1 never executed
+        -:  384:    goto _exit;
+        -:  385:
+    #####:  386:  yr_stopwatch_start(&scanner->stopwatch);
+call    0 never executed
+        -:  387:
+    #####:  388:  while (block != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  389:  {
+    #####:  390:    const uint8_t* data = block->fetch_data(block);
+call    0 never executed
+        -:  391:
+        -:  392:    // fetch may fail
+    #####:  393:    if (data == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  394:    {
+    #####:  395:      block = iterator->next(iterator);
+call    0 never executed
+    #####:  396:      continue;
+        -:  397:    }
+        -:  398:
+    #####:  399:    if (scanner->entry_point == UNDEFINED)
+branch  0 never executed
+branch  1 never executed
+        -:  400:    {
+    #####:  401:      YR_TRYCATCH(
+branch  0 never executed
+branch  1 never executed
+call    2 never executed
+call    3 never executed
+call    4 never executed
+call    5 never executed
+branch  6 never executed
+branch  7 never executed
+call    8 never executed
+branch  9 never executed
+branch 10 never executed
+branch 11 never executed
+branch 12 never executed
+call   13 never executed
+call   14 never executed
+call   15 never executed
+call   16 never executed
+branch 17 never executed
+branch 18 never executed
+call   19 never executed
+call   20 never executed
+        -:  402:        !(scanner->flags & SCAN_FLAGS_NO_TRYCATCH),
+        -:  403:        {
+        -:  404:          if (scanner->flags & SCAN_FLAGS_PROCESS_MEMORY)
+        -:  405:            scanner->entry_point = yr_get_entry_point_address(
+        -:  406:                data,
+        -:  407:                block->size,
+        -:  408:                block->base);
+        -:  409:          else
+        -:  410:            scanner->entry_point = yr_get_entry_point_offset(
+        -:  411:                data,
+        -:  412:                block->size);
+        -:  413:        },{});
+        -:  414:    }
+        -:  415:
+    #####:  416:    YR_TRYCATCH(
+branch  0 never executed
+branch  1 never executed
+call    2 never executed
+call    3 never executed
+call    4 never executed
+call    5 never executed
+branch  6 never executed
+branch  7 never executed
+call    8 never executed
+branch  9 never executed
+branch 10 never executed
+call   11 never executed
+call   12 never executed
+call   13 never executed
+call   14 never executed
+        -:  417:      !(scanner->flags & SCAN_FLAGS_NO_TRYCATCH),
+        -:  418:      {
+        -:  419:        result = _yr_scanner_scan_mem_block(
+        -:  420:            scanner,
+        -:  421:            data,
+        -:  422:            block);
+        -:  423:      },{
+        -:  424:        result = ERROR_COULD_NOT_MAP_FILE;
+        -:  425:      });
+        -:  426:
+    #####:  427:    if (result != ERROR_SUCCESS)
+branch  0 never executed
+branch  1 never executed
+        -:  428:      goto _exit;
+        -:  429:
+    #####:  430:    block = iterator->next(iterator);
+call    0 never executed
+        -:  431:  }
+        -:  432:
+    #####:  433:  YR_TRYCATCH(
+branch  0 never executed
+branch  1 never executed
+call    2 never executed
+call    3 never executed
+call    4 never executed
+call    5 never executed
+branch  6 never executed
+branch  7 never executed
+call    8 never executed
+branch  9 never executed
+branch 10 never executed
+call   11 never executed
+call   12 never executed
+call   13 never executed
+call   14 never executed
+        -:  434:    !(scanner->flags & SCAN_FLAGS_NO_TRYCATCH),
+        -:  435:    {
+        -:  436:      result = yr_execute_code(scanner);
+        -:  437:    },{
+        -:  438:      result = ERROR_COULD_NOT_MAP_FILE;
+        -:  439:    });
+        -:  440:
+    #####:  441:  if (result != ERROR_SUCCESS)
+branch  0 never executed
+branch  1 never executed
+        -:  442:    goto _exit;
+        -:  443:
+    #####:  444:  yr_rules_foreach(rules, rule)
+branch  0 never executed
+branch  1 never executed
+        -:  445:  {
+        -:  446:    int message;
+        -:  447:
+    #####:  448:    if (rule->t_flags[tidx] & RULE_TFLAGS_MATCH &&
+branch  0 never executed
+branch  1 never executed
+branch  2 never executed
+branch  3 never executed
+    #####:  449:        !(rule->ns->t_flags[tidx] & NAMESPACE_TFLAGS_UNSATISFIED_GLOBAL))
+        -:  450:    {
+        -:  451:      message = CALLBACK_MSG_RULE_MATCHING;
+        -:  452:    }
+        -:  453:    else
+        -:  454:    {
+        -:  455:      message = CALLBACK_MSG_RULE_NOT_MATCHING;
+        -:  456:    }
+        -:  457:
+    #####:  458:    if (!RULE_IS_PRIVATE(rule))
+branch  0 never executed
+branch  1 never executed
+        -:  459:    {
+    #####:  460:      switch (scanner->callback(message, rule, scanner->user_data))
+call    0 never executed
+branch  1 never executed
+branch  2 never executed
+branch  3 never executed
+        -:  461:      {
+        -:  462:        case CALLBACK_ABORT:
+        -:  463:          result = ERROR_SUCCESS;
+        -:  464:          goto _exit;
+        -:  465:
+    #####:  466:        case CALLBACK_ERROR:
+        -:  467:          result = ERROR_CALLBACK_ERROR;
+    #####:  468:          goto _exit;
+        -:  469:      }
+        -:  470:    }
+        -:  471:  }
+        -:  472:
+    #####:  473:  scanner->callback(CALLBACK_MSG_SCAN_FINISHED, NULL, scanner->user_data);
+call    0 never executed
+        -:  474:
+    #####:  475:_exit:
+        -:  476:
+    #####:  477:  scanner->rules->time_cost += yr_stopwatch_elapsed_us(&scanner->stopwatch);
+call    0 never executed
+        -:  478:
+    #####:  479:  _yr_scanner_clean_matches(scanner);
+call    0 never executed
+        -:  480:
+    #####:  481:  if (scanner->matches_arena != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  482:  {
+    #####:  483:    yr_arena_destroy(scanner->matches_arena);
+call    0 never executed
+    #####:  484:    scanner->matches_arena = NULL;
+        -:  485:  }
+        -:  486:
+    #####:  487:  if (scanner->matching_strings_arena != NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  488:  {
+    #####:  489:    yr_arena_destroy(scanner->matching_strings_arena);
+call    0 never executed
+    #####:  490:    scanner->matching_strings_arena = NULL;
+        -:  491:  }
+        -:  492:
+    #####:  493:  yr_mutex_lock(&rules->mutex);
+call    0 never executed
+    #####:  494:  YR_BITARRAY_UNSET(rules->tidx_mask, tidx);
+    #####:  495:  yr_mutex_unlock(&rules->mutex);
+call    0 never executed
+        -:  496:
+    #####:  497:  yr_set_tidx(-1);
+call    0 never executed
+        -:  498:
+        -:  499:  return result;
+        -:  500:}
+        -:  501:
+        -:  502:
+function _yr_get_first_block called 0 returned 0% blocks executed 0%
+    #####:  503:static YR_MEMORY_BLOCK* _yr_get_first_block(
+        -:  504:    YR_MEMORY_BLOCK_ITERATOR* iterator)
+        -:  505:{
+    #####:  506:  return (YR_MEMORY_BLOCK*) iterator->context;
+        -:  507:}
+        -:  508:
+        -:  509:
+function _yr_get_next_block called 0 returned 0% blocks executed 0%
+    #####:  510:static YR_MEMORY_BLOCK* _yr_get_next_block(
+        -:  511:    YR_MEMORY_BLOCK_ITERATOR* iterator)
+        -:  512:{
+    #####:  513:  return NULL;
+        -:  514:}
+        -:  515:
+        -:  516:
+function _yr_fetch_block_data called 0 returned 0% blocks executed 0%
+    #####:  517:static const uint8_t* _yr_fetch_block_data(
+        -:  518:    YR_MEMORY_BLOCK* block)
+        -:  519:{
+    #####:  520:  return (const uint8_t*) block->context;
+        -:  521:}
+        -:  522:
+        -:  523:
+function yr_scanner_scan_mem called 0 returned 0% blocks executed 0%
+    #####:  524:YR_API int yr_scanner_scan_mem(
+        -:  525:    YR_SCANNER* scanner,
+        -:  526:    const uint8_t* buffer,
+        -:  527:    size_t buffer_size)
+        -:  528:{
+        -:  529:  YR_MEMORY_BLOCK block;
+        -:  530:  YR_MEMORY_BLOCK_ITERATOR iterator;
+        -:  531:
+    #####:  532:  block.size = buffer_size;
+    #####:  533:  block.base = 0;
+    #####:  534:  block.fetch_data = _yr_fetch_block_data;
+    #####:  535:  block.context = (void*) buffer;
+        -:  536:
+    #####:  537:  iterator.context = &block;
+    #####:  538:  iterator.first = _yr_get_first_block;
+    #####:  539:  iterator.next = _yr_get_next_block;
+        -:  540:
+    #####:  541:  return yr_scanner_scan_mem_blocks(scanner, &iterator);
+call    0 never executed
+        -:  542:}
+        -:  543:
+        -:  544:
+function yr_scanner_scan_file called 0 returned 0% blocks executed 0%
+    #####:  545:YR_API int yr_scanner_scan_file(
+        -:  546:    YR_SCANNER* scanner,
+        -:  547:    const char* filename)
+        -:  548:{
+        -:  549:  YR_MAPPED_FILE mfile;
+        -:  550:
+    #####:  551:  int result = yr_filemap_map(filename, &mfile);
+call    0 never executed
+        -:  552:
+    #####:  553:  if (result == ERROR_SUCCESS)
+branch  0 never executed
+branch  1 never executed
+        -:  554:  {
+    #####:  555:    result = yr_scanner_scan_mem(scanner, mfile.data, mfile.size);
+call    0 never executed
+    #####:  556:    yr_filemap_unmap(&mfile);
+call    0 never executed
+        -:  557:  }
+        -:  558:
+    #####:  559:  return result;
+        -:  560:}
+        -:  561:
+        -:  562:
+function yr_scanner_scan_fd called 0 returned 0% blocks executed 0%
+    #####:  563:YR_API int yr_scanner_scan_fd(
+        -:  564:    YR_SCANNER* scanner,
+        -:  565:    YR_FILE_DESCRIPTOR fd)
+        -:  566:{
+        -:  567:  YR_MAPPED_FILE mfile;
+        -:  568:
+    #####:  569:  int result = yr_filemap_map_fd(fd, 0, 0, &mfile);
+call    0 never executed
+        -:  570:
+    #####:  571:  if (result == ERROR_SUCCESS)
+branch  0 never executed
+branch  1 never executed
+        -:  572:  {
+    #####:  573:    result = yr_scanner_scan_mem(scanner, mfile.data, mfile.size);
+call    0 never executed
+    #####:  574:    yr_filemap_unmap_fd(&mfile);
+call    0 never executed
+        -:  575:  }
+        -:  576:
+    #####:  577:  return result;
+        -:  578:}
+        -:  579:
+        -:  580:
+function yr_scanner_scan_proc called 0 returned 0% blocks executed 0%
+    #####:  581:YR_API int yr_scanner_scan_proc(
+        -:  582:    YR_SCANNER* scanner,
+        -:  583:    int pid)
+        -:  584:{
+        -:  585:  YR_MEMORY_BLOCK_ITERATOR iterator;
+        -:  586:
+    #####:  587:  int result = yr_process_open_iterator(pid, &iterator);
+call    0 never executed
+        -:  588:
+    #####:  589:  if (result == ERROR_SUCCESS)
+branch  0 never executed
+branch  1 never executed
+        -:  590:  {
+    #####:  591:    int prev_flags = scanner->flags;
+    #####:  592:    scanner->flags |= SCAN_FLAGS_PROCESS_MEMORY;
+    #####:  593:    result = yr_scanner_scan_mem_blocks(scanner, &iterator);
+call    0 never executed
+    #####:  594:    scanner->flags = prev_flags;
+    #####:  595:    yr_process_close_iterator(&iterator);
+call    0 never executed
+        -:  596:  }
+        -:  597:
+    #####:  598:  return result;
+        -:  599:}
+        -:  600:
+        -:  601:
+function yr_scanner_last_error_string called 0 returned 0% blocks executed 0%
+    #####:  602:YR_API YR_STRING* yr_scanner_last_error_string(
+        -:  603:    YR_SCANNER* scanner)
+        -:  604:{
+    #####:  605:  return scanner->last_error_string;
+        -:  606:}
+        -:  607:
+        -:  608:
+function yr_scanner_last_error_rule called 0 returned 0% blocks executed 0%
+    #####:  609:YR_API YR_RULE* yr_scanner_last_error_rule(
+        -:  610:    YR_SCANNER* scanner)
+        -:  611:{
+    #####:  612:  if (scanner->last_error_string == NULL)
+branch  0 never executed
+branch  1 never executed
+        -:  613:    return NULL;
+        -:  614:
+    #####:  615:  return scanner->last_error_string->rule;
+        -:  616:}
