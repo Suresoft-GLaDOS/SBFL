@@ -128,7 +128,7 @@ def gcov_files_to_frame(gcov_files: dict, only_coverable=True, only_covered=Fals
     # create dataframe
     df = pd.DataFrame(
         data, index=pd.MultiIndex.from_tuples(index,
-                names=['source', 'line']), columns=columns)
+                names=['file', 'line']), columns=columns)
     
     if only_covered:
         covered = df.values.sum(axis=1) > 0
@@ -158,9 +158,35 @@ def get_sbfl_scores_from_frame(cov_df, failing_tests, sbfl=None):
         that has only one column, score
     """
     assert all([t in cov_df.columns for t in failing_tests])
-    X, y = cov_df.values.T > 0, cov_df.columns.isin(failing_tests)
-
+    X, y = cov_df.values.T > 0, ~cov_df.columns.isin(failing_tests)
     if sbfl is None:
         sbfl = base.SBFL()
     sbfl.fit(X, y)
     return sbfl.to_frame(index=cov_df.index)
+
+def read_dfcpp_output(d4cpp_output_dir, **kwargs):
+    """
+    Returns coverage data and the list of failing tests
+    """
+    coverage_dirs = {}
+    for dname in os.listdir(d4cpp_output_dir):
+        case = dname.split('-')[-1]
+        coverage_dirs[case] = os.path.join(d4cpp_output_dir, dname)
+
+    failing_tests = []
+    for case in coverage_dirs:
+        result_path = os.path.join(coverage_dirs[case], f"{case}.test")
+        with open(result_path, 'r') as f:
+            result = f.read().strip()
+        if result == 'failed':
+            failing_tests.append(case)
+
+    coverage_files = {
+        test: [
+            os.path.join(coverage_dirs[test], fn)
+            for fn in os.listdir(coverage_dirs[test]) if fn.endswith('gcov')
+        ]
+        for test in coverage_dirs
+    }
+
+    return gcov_files_to_frame(coverage_files, **kwargs), failing_tests
