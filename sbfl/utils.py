@@ -41,7 +41,7 @@ def read_gcov(path_to_file, only_coverable=True) -> dict:
         a tuple of source file name and dict-type line coverage data
         line coverage data: dict(lineno: hits)
             -   -1: not coverable (hits == '-')
-            -    0: coverable, but not covered (hits == '#####')
+            -    0: coverable, but not covered (hits == '#####' or '=====')
             -  > 0: coverable and covered (hits == <number>)
     """
     source = None
@@ -58,15 +58,21 @@ def read_gcov(path_to_file, only_coverable=True) -> dict:
                 if content.startswith('Source'):
                     source = content.split(':')[1]
                 continue
-            
+
+            if lineno in coverage and coverage[lineno] > 0:
+                continue
+                # raise Exception("Duplicated", path_to_file, lineno)
+
             if hits == "-":
                 if only_coverable:
                     continue
                 else:
                     coverage[lineno] = -1
-            elif hits == "#####":
+            elif hits == "#####" or hits == "=====":
                 coverage[lineno] = 0
             else:
+                if hits.endswith("*"):
+                    hits = hits[:-1]
                 coverage[lineno] = int(hits)
 
     if source is None:
@@ -164,22 +170,18 @@ def get_sbfl_scores_from_frame(cov_df, failing_tests, sbfl=None):
     sbfl.fit(X, y)
     return sbfl.to_frame(index=cov_df.index)
 
-def read_dfcpp_output(d4cpp_output_dir, **kwargs):
+def read_dfcpp_coverage(d4cpp_output_dir, **kwargs):
     """
-    Returns coverage data and the list of failing tests
+    Returns coverage data
     """
     coverage_dirs = {}
-    for dname in os.listdir(d4cpp_output_dir):
-        case = dname.split('-')[-1]
-        coverage_dirs[case] = os.path.join(d4cpp_output_dir, dname)
 
-    failing_tests = []
-    for case in coverage_dirs:
-        result_path = os.path.join(coverage_dirs[case], f"{case}.test")
-        with open(result_path, 'r') as f:
-            result = f.read().strip()
-        if result == 'failed':
-            failing_tests.append(case)
+    for dir_name in os.listdir(d4cpp_output_dir):
+        path_to_dir = os.path.join(d4cpp_output_dir, dir_name)
+        if not os.path.isdir(path_to_dir):
+            continue
+        case = dir_name.split('-')[-1]
+        coverage_dirs[case] = path_to_dir
 
     coverage_files = {
         test: [
@@ -189,4 +191,20 @@ def read_dfcpp_output(d4cpp_output_dir, **kwargs):
         for test in coverage_dirs
     }
 
-    return gcov_files_to_frame(coverage_files, **kwargs), failing_tests
+    return gcov_files_to_frame(coverage_files, **kwargs)
+
+def read_dfcpp_test_results(d4cpp_output_dir):
+    """
+    Returns test results
+    """
+    test_results = {}
+    for dir_name in os.listdir(d4cpp_output_dir):
+        path_to_dir = os.path.join(d4cpp_output_dir, dir_name)
+        if not os.path.isdir(path_to_dir):
+            continue
+        case = dir_name.split('-')[-1]
+        result_path = os.path.join(path_to_dir, f"{case}.test")
+        with open(result_path, 'r') as f:
+            test_results[case] = f.read().strip()
+
+    return test_results
