@@ -5,7 +5,7 @@
 ⚠️ This engine is under construction.👷‍♀️
 
 ## Environment
-- Tested under Python 3.9.1
+- Developed & tested under Python 3.9.1
 - Installing dependencies:
   ```bash
   python -m pip install -r requirements.txt
