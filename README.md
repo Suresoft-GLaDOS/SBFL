@@ -12,7 +12,36 @@
   ```
 
 ## Getting Started
-See the example usage of this engine in [./main.py](./main.py).
+```python
+import numpy as np
+from sbfl.base import SBFL
+
+if __name__ == "__main__":
+    """
+    X: coverage data
+    y: test results
+    """
+    X = np.array([
+        [1,0,1], # coverage of test t0
+        [0,0,1], # coverage of test t1
+        [1,1,0]  # coverage of test t2
+    ], dtype=bool)
+
+    y = np.array([
+        1, # t0: PASS
+        0, # t1: FAIL
+        1  # t2: PASS
+    ], dtype=bool)
+
+    """
+    Calculate the suspiciousness scores
+    """
+    sbfl = SBFL(formula='Ochiai')
+    sbfl.fit(X, y)
+    print(sbfl.ranks(method='max'))
+```
+
+See the full example usage of this engine in [./main.py](./main.py).
 ```bash
 python main.py
 ```
