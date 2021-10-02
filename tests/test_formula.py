@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose
+from numpy.testing import assert_allclose, assert_array_equal
 from sbfl.base import SBFL
+import sbfl.sbfl_formula as formula
 
 def X_y_sample_1():
     X = np.array([
@@ -316,3 +317,17 @@ def test_euclid():
     assert scores[0] == 0.0
     assert_allclose(scores[1], 1.0)
     assert_allclose(scores[2], 1.414213562)
+
+
+"""
+Test shallow copy
+"""
+def test_er1a_shallow_copy():
+    e_p = np.array([2, 1, 0, 0])
+    n_p = np.array([0, 2, 1, 0])
+    e_f = np.array([0, 0, 2, 1])
+    n_f = np.array([1, 0, 0, 2])
+    scores = formula.ER1a(e_p, n_p, e_f, n_f)
+
+    assert_array_equal(scores, np.array([-1, 2, 1, -1]))
+    assert_array_equal(n_p, np.array([-1, 2, 1, -1]), 'Shallow copy not performed')
