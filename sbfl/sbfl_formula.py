@@ -42,7 +42,7 @@ def M2(e_p, n_p, e_f, n_f):
     return e_f/(e_f + n_p + 2 * n_f + 2 * e_p)
 
 def ER1a(e_p, n_p, e_f, n_f):
-    scores = n_p
+    scores = np.copy(n_p)
     scores[n_f > 0] = -1
     return scores
 
