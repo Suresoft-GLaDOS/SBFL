@@ -2,11 +2,11 @@ import numpy as np
 
 def diversity(X):
     N, _ = X.shape
+    if N < 2:
+        return 1.
+
     _, counts = np.unique(X > 0, axis=0, return_counts=True)
-    if N > 1:
-        value = 1 - (counts * (counts - 1)).sum()/(N * (N - 1))
-    else:
-        value = 1.
+    value = 1 - (counts * (counts - 1)).sum()/(N * (N - 1))
     assert 0 <= value <= 1
     return value
 
