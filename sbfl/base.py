@@ -22,8 +22,8 @@ class SBFL:
         self.formula = formula
         self.formula_func = supported_formulae[formula]
 
-    def check_X_y(self, X, y):
-        """Validate Input"""
+    @staticmethod
+    def validate_input(X, y):
         X, y = check_X_y(X, y, accept_sparse=False, dtype=bool,
             ensure_2d=True, y_numeric=True, multi_output=False)
         if np.invert(y).sum() == 0:
@@ -40,7 +40,7 @@ class SBFL:
             - e_f: the number of failing tests that cover each elements
             - n_f: the number of failing tests that do not cover each elements
         """
-        X, y = self.check_X_y(X, y)
+        X, y = self.validate_input(X, y)
 
         is_passing = y
         is_failing = np.invert(y)
