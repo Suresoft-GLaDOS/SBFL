@@ -65,7 +65,7 @@ class SBFL:
 
     def ranks(self, method='average'):
         """
-        An array of size equl to the size of scores_, containing ranks 
+        An array of size equals to the size of scores_, containing ranks
 
         See https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.rankdata.html
         for the details of ranking methods (tie-breakers).
