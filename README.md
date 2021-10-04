@@ -11,6 +11,13 @@
   python -m pip install -r requirements.txt
   ```
 
+## Installing package
+```bash
+git clone https://github.com/Suresoft-GLaDOS/SBFL
+cd SBFL
+python setup.py install # or pip install -e .
+```
+
 ## Getting Started
 ```python
 import numpy as np
