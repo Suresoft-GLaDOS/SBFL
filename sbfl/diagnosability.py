@@ -2,7 +2,7 @@ import numpy as np
 
 def diversity(X):
     N, _ = X.shape
-    if N < 2:
+    if N == 1:
         return 1.
 
     _, counts = np.unique(X > 0, axis=0, return_counts=True)
