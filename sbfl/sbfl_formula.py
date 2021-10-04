@@ -65,9 +65,9 @@ def Wong3(e_p, n_p, e_f, n_f):
     cond1 = (e_p > 2) & (e_p <= 10)
     cond2 = e_p > 10
 
-    h = e_p
-    h[cond1] = 2 + 0.1 * (e_p[cond1] - 2)
-    h[cond2] = 2.8 + 0.001 * (e_p[cond2] - 10)
+    h = e_p.copy()
+    h[cond1] = 2 + 0.1 * (h[cond1] - 2)
+    h[cond2] = 2.8 + 0.001 * (h[cond2] - 10)
 
     return e_f - h
 
