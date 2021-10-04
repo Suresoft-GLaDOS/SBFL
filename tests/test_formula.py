@@ -341,4 +341,4 @@ def test_wong3_deep_copy():
     scores = formula.Wong3(e_p, n_p, e_f, n_f)
 
     assert_array_equal(scores, np.array([-1, -2,  2, 11]))
-    assert_array_equal(e_p, np.array([2, 2, 1, 0]), 'Shallow copy not occurred')
+    assert_array_equal(e_p, np.array([3, 11, 1, 0]), 'Shallow copy occurred')
