@@ -16,6 +16,9 @@ def density(X):
     assert 0 <= value <= 1
     return value
 
+def norm_density(X):
+    return 1 - abs(1 - 2 * density(X))
+
 def uniqueness(X):
     _, M = X.shape
     unique_elems = np.unique(X > 0, axis=1)
@@ -24,4 +27,4 @@ def uniqueness(X):
     return value
 
 def DDU(X):
-    return diversity(X) * density(X) * uniqueness(X)
+    return diversity(X) * norm_density(X) * uniqueness(X)

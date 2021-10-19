@@ -24,3 +24,28 @@ def test_uniqueness():
 def test_density():
     X, y = X_y_sample_1()
     assert_allclose(density(X), 5/9)
+
+def test_normalized_density():
+    X, y = X_y_sample_1()
+    assert_allclose(norm_density(X), 8/9)
+
+def test_compare_densities():
+    X = np.array([
+        [1,1,0,0],
+        [1,1,0,0],
+        [1,1,0,0],
+        [1,1,0,0]
+    ], dtype=int)
+    
+    assert_allclose(density(X), 0.5)
+    assert_allclose(norm_density(X), 1.0)
+
+    X = np.array([
+        [1,1,0,0],
+        [0,0,1,1],
+        [1,1,1,0],
+        [0,0,0,1]
+    ], dtype=int)
+    
+    assert_allclose(density(X), 0.5)
+    assert_allclose(norm_density(X), 1.0)
