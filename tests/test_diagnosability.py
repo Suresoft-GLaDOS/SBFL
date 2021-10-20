@@ -49,3 +49,23 @@ def test_compare_densities():
     
     assert_allclose(density(X), 0.5)
     assert_allclose(norm_density(X), 1.0)
+
+    X = np.array([
+        [1,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0]
+    ], dtype=int)
+
+    assert_allclose(density(X), 1/16)
+    assert_allclose(norm_density(X), 1/8)
+
+    X = np.array([
+        [0,1,1,1],
+        [1,1,1,1],
+        [1,1,1,1],
+        [1,1,1,1]
+    ], dtype=int)
+
+    assert_allclose(density(X), 15/16)
+    assert_allclose(norm_density(X), 1/8)
