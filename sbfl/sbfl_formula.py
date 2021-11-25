@@ -1,7 +1,7 @@
 import numpy as np
 
 def Ochiai(e_p, n_p, e_f, n_f):
-    return e_f/np.sqrt(((e_f + n_f) * (e_f + e_p)))
+    return e_f/np.sqrt((e_f + n_f) * (e_f + e_p))
 
 def Tarantula(e_p, n_p, e_f, n_f):
     r_f = e_f/(e_f + n_f)
