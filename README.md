@@ -11,10 +11,11 @@
   python -m pip install -r requirements.txt
   ```
 
-## Installing package
+## Installation
 ```bash
 git clone https://github.com/Suresoft-GLaDOS/SBFL
 cd SBFL
+pip install setuptools
 python setup.py install # or pip install -e .
 ```
 
