@@ -1,0 +1,85 @@
+        -:    0:Source:modules/time.c
+        -:    0:Graph:/home/workspace/libyara/modules/time.gcno
+        -:    0:Data:/home/workspace/libyara/modules/time.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2014-2017. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <yara/modules.h>
+        -:   31:#include <time.h>
+        -:   32:
+        -:   33:#define MODULE_NAME time
+        -:   34:
+        -:   35:
+    #####:   36:define_function(now)
+        -:   37:{
+    #####:   38:  time_t now = time(NULL);
+    #####:   39:  if (now == -1)
+    #####:   40:    return_integer(UNDEFINED);
+    #####:   41:  return_integer((long) now);
+        -:   42:}
+        -:   43:
+        -:   44:
+    #####:   45:begin_declarations;
+        -:   46:
+    #####:   47:  declare_function("now", "", "i", now);
+        -:   48:
+    #####:   49:end_declarations;
+        -:   50:
+        -:   51:
+        6:   52:int module_initialize(
+        -:   53:    YR_MODULE* module)
+        -:   54:{
+        6:   55:  return ERROR_SUCCESS;
+        -:   56:}
+        -:   57:
+        -:   58:
+        4:   59:int module_finalize(
+        -:   60:    YR_MODULE* module)
+        -:   61:{
+        4:   62:  return ERROR_SUCCESS;
+        -:   63:}
+        -:   64:
+        -:   65:
+    #####:   66:int module_load(
+        -:   67:    YR_SCAN_CONTEXT* context,
+        -:   68:    YR_OBJECT* module_object,
+        -:   69:    void* module_data,
+        -:   70:    size_t module_data_size)
+        -:   71:{
+    #####:   72:  return ERROR_SUCCESS;
+        -:   73:}
+        -:   74:
+        -:   75:
+    #####:   76:int module_unload(
+        -:   77:    YR_OBJECT* module_object)
+        -:   78:{
+    #####:   79:  return ERROR_SUCCESS;
+        -:   80:}

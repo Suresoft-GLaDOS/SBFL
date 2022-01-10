@@ -1,0 +1,1283 @@
+        -:    0:Source:parser.c
+        -:    0:Graph:/home/workspace/libyara/parser.gcno
+        -:    0:Data:/home/workspace/libyara/parser.gcda
+        -:    0:Runs:7
+        -:    0:Programs:7
+        -:    1:/*
+        -:    2:Copyright (c) 2013. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <stddef.h>
+        -:   31:#include <string.h>
+        -:   32:
+        -:   33:#include <yara/ahocorasick.h>
+        -:   34:#include <yara/arena.h>
+        -:   35:#include <yara/re.h>
+        -:   36:#include <yara/error.h>
+        -:   37:#include <yara/exec.h>
+        -:   38:#include <yara/object.h>
+        -:   39:#include <yara/strutils.h>
+        -:   40:#include <yara/utils.h>
+        -:   41:#include <yara/modules.h>
+        -:   42:#include <yara/parser.h>
+        -:   43:#include <yara/mem.h>
+        -:   44:
+        -:   45:#define todigit(x)  ((x) >='A'&& (x) <='F')? \
+        -:   46:                    ((uint8_t) (x - 'A' + 10)) : \
+        -:   47:                    ((uint8_t) (x - '0'))
+        -:   48:
+        -:   49:
+    #####:   50:int yr_parser_emit(
+        -:   51:    yyscan_t yyscanner,
+        -:   52:    uint8_t instruction,
+        -:   53:    uint8_t** instruction_address)
+        -:   54:{
+    #####:   55:  return yr_arena_write_data(
+    #####:   56:      yyget_extra(yyscanner)->code_arena,
+        -:   57:      &instruction,
+        -:   58:      sizeof(int8_t),
+        -:   59:      (void**) instruction_address);
+        -:   60:}
+        -:   61:
+        -:   62:
+    #####:   63:int yr_parser_emit_with_arg_double(
+        -:   64:    yyscan_t yyscanner,
+        -:   65:    uint8_t instruction,
+        -:   66:    double argument,
+        -:   67:    uint8_t** instruction_address,
+        -:   68:    double** argument_address)
+        -:   69:{
+    #####:   70:  int result = yr_arena_write_data(
+    #####:   71:      yyget_extra(yyscanner)->code_arena,
+        -:   72:      &instruction,
+        -:   73:      sizeof(uint8_t),
+        -:   74:      (void**) instruction_address);
+        -:   75:
+    #####:   76:  if (result == ERROR_SUCCESS)
+    #####:   77:    result = yr_arena_write_data(
+    #####:   78:        yyget_extra(yyscanner)->code_arena,
+        -:   79:        &argument,
+        -:   80:        sizeof(double),
+        -:   81:        (void**) argument_address);
+        -:   82:
+    #####:   83:  return result;
+        -:   84:}
+        -:   85:
+        -:   86:
+    #####:   87:int yr_parser_emit_with_arg(
+        -:   88:    yyscan_t yyscanner,
+        -:   89:    uint8_t instruction,
+        -:   90:    int64_t argument,
+        -:   91:    uint8_t** instruction_address,
+        -:   92:    int64_t** argument_address)
+        -:   93:{
+    #####:   94:  int result = yr_arena_write_data(
+    #####:   95:      yyget_extra(yyscanner)->code_arena,
+        -:   96:      &instruction,
+        -:   97:      sizeof(uint8_t),
+        -:   98:      (void**) instruction_address);
+        -:   99:
+    #####:  100:  if (result == ERROR_SUCCESS)
+    #####:  101:    result = yr_arena_write_data(
+    #####:  102:        yyget_extra(yyscanner)->code_arena,
+        -:  103:        &argument,
+        -:  104:        sizeof(int64_t),
+        -:  105:        (void**) argument_address);
+        -:  106:
+    #####:  107:  return result;
+        -:  108:}
+        -:  109:
+        -:  110:
+    #####:  111:int yr_parser_emit_with_arg_reloc(
+        -:  112:    yyscan_t yyscanner,
+        -:  113:    uint8_t instruction,
+        -:  114:    void* argument,
+        -:  115:    uint8_t** instruction_address,
+        -:  116:    void** argument_address)
+        -:  117:{
+    #####:  118:  int64_t* ptr = NULL;
+        -:  119:  int result;
+        -:  120:
+        -:  121:  DECLARE_REFERENCE(void*, ptr) arg;
+        -:  122:
+    #####:  123:  memset(&arg, 0, sizeof(arg));
+    #####:  124:  arg.ptr = argument;
+        -:  125:
+    #####:  126:  result = yr_arena_write_data(
+    #####:  127:      yyget_extra(yyscanner)->code_arena,
+        -:  128:      &instruction,
+        -:  129:      sizeof(uint8_t),
+        -:  130:      (void**) instruction_address);
+        -:  131:
+    #####:  132:  if (result == ERROR_SUCCESS)
+    #####:  133:    result = yr_arena_write_data(
+    #####:  134:        yyget_extra(yyscanner)->code_arena,
+        -:  135:        &arg,
+        -:  136:        sizeof(arg),
+        -:  137:        (void**) &ptr);
+        -:  138:
+    #####:  139:  if (result == ERROR_SUCCESS)
+    #####:  140:    result = yr_arena_make_ptr_relocatable(
+    #####:  141:        yyget_extra(yyscanner)->code_arena,
+        -:  142:        ptr,
+        -:  143:        0,
+        -:  144:        EOL);
+        -:  145:
+    #####:  146:  if (argument_address != NULL)
+    #####:  147:    *argument_address = (void*) ptr;
+        -:  148:
+    #####:  149:  return result;
+        -:  150:}
+        -:  151:
+        -:  152:
+    #####:  153:int yr_parser_emit_pushes_for_strings(
+        -:  154:    yyscan_t yyscanner,
+        -:  155:    const char* identifier)
+        -:  156:{
+    #####:  157:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+    #####:  158:  YR_STRING* string = compiler->current_rule->strings;
+        -:  159:
+        -:  160:  const char* string_identifier;
+        -:  161:  const char* target_identifier;
+        -:  162:
+    #####:  163:  int matching = 0;
+        -:  164:
+    #####:  165:  while(!STRING_IS_NULL(string))
+        -:  166:  {
+        -:  167:    // Don't generate pushes for strings chained to another one, we are
+        -:  168:    // only interested in non-chained strings or the head of the chain.
+        -:  169:
+    #####:  170:    if (string->chained_to == NULL)
+        -:  171:    {
+    #####:  172:      string_identifier = string->identifier;
+    #####:  173:      target_identifier = identifier;
+        -:  174:
+    #####:  175:      while (*target_identifier != '\0' &&
+    #####:  176:             *string_identifier != '\0' &&
+    #####:  177:             *target_identifier == *string_identifier)
+        -:  178:      {
+    #####:  179:        target_identifier++;
+    #####:  180:        string_identifier++;
+        -:  181:      }
+        -:  182:
+    #####:  183:      if ((*target_identifier == '\0' && *string_identifier == '\0') ||
+    #####:  184:           *target_identifier == '*')
+        -:  185:      {
+    #####:  186:        yr_parser_emit_with_arg_reloc(
+        -:  187:            yyscanner,
+        -:  188:            OP_PUSH,
+        -:  189:            string,
+        -:  190:            NULL,
+        -:  191:            NULL);
+        -:  192:
+    #####:  193:        string->g_flags |= STRING_GFLAGS_REFERENCED;
+    #####:  194:        string->g_flags &= ~STRING_GFLAGS_FIXED_OFFSET;
+    #####:  195:        matching++;
+        -:  196:      }
+        -:  197:    }
+        -:  198:
+    #####:  199:    string = (YR_STRING*) yr_arena_next_address(
+        -:  200:        compiler->strings_arena,
+        -:  201:        string,
+        -:  202:        sizeof(YR_STRING));
+        -:  203:  }
+        -:  204:
+    #####:  205:  if (matching == 0)
+        -:  206:  {
+    #####:  207:    yr_compiler_set_error_extra_info(compiler, identifier);
+    #####:  208:    return ERROR_UNDEFINED_STRING;
+        -:  209:  }
+        -:  210:
+    #####:  211:  return ERROR_SUCCESS;
+        -:  212:}
+        -:  213:
+        -:  214:
+    #####:  215:int yr_parser_check_types(
+        -:  216:    YR_COMPILER* compiler,
+        -:  217:    YR_OBJECT_FUNCTION* function,
+        -:  218:    const char* actual_args_fmt)
+        -:  219:{
+        -:  220:  int i;
+        -:  221:
+    #####:  222:  for (i = 0; i < YR_MAX_OVERLOADED_FUNCTIONS; i++)
+        -:  223:  {
+    #####:  224:    if (function->prototypes[i].arguments_fmt == NULL)
+    #####:  225:      break;
+        -:  226:
+    #####:  227:    if (strcmp(function->prototypes[i].arguments_fmt, actual_args_fmt) == 0)
+    #####:  228:      return ERROR_SUCCESS;
+        -:  229:  }
+        -:  230:
+    #####:  231:  yr_compiler_set_error_extra_info(compiler, function->identifier);
+        -:  232:
+    #####:  233:  return ERROR_WRONG_ARGUMENTS;
+        -:  234:}
+        -:  235:
+        -:  236:
+    #####:  237:int yr_parser_lookup_string(
+        -:  238:    yyscan_t yyscanner,
+        -:  239:    const char* identifier,
+        -:  240:    YR_STRING** string)
+        -:  241:{
+    #####:  242:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -:  243:
+    #####:  244:  *string = compiler->current_rule->strings;
+        -:  245:
+    #####:  246:  while(!STRING_IS_NULL(*string))
+        -:  247:  {
+        -:  248:    // If some string $a gets fragmented into multiple chained
+        -:  249:    // strings, all those fragments have the same $a identifier
+        -:  250:    // but we are interested in the heading fragment, which is
+        -:  251:    // that with chained_to == NULL
+        -:  252:
+    #####:  253:    if (strcmp((*string)->identifier, identifier) == 0 &&
+    #####:  254:        (*string)->chained_to == NULL)
+        -:  255:    {
+    #####:  256:      return ERROR_SUCCESS;
+        -:  257:    }
+        -:  258:
+    #####:  259:    *string = (YR_STRING*) yr_arena_next_address(
+        -:  260:        compiler->strings_arena,
+        -:  261:        *string,
+        -:  262:        sizeof(YR_STRING));
+        -:  263:  }
+        -:  264:
+    #####:  265:  yr_compiler_set_error_extra_info(compiler, identifier);
+        -:  266:
+    #####:  267:  *string = NULL;
+        -:  268:
+    #####:  269:  return ERROR_UNDEFINED_STRING;
+        -:  270:}
+        -:  271:
+        -:  272:
+    #####:  273:int yr_parser_lookup_loop_variable(
+        -:  274:    yyscan_t yyscanner,
+        -:  275:    const char* identifier)
+        -:  276:{
+    #####:  277:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -:  278:  int i;
+        -:  279:
+    #####:  280:  for (i = 0; i < compiler->loop_depth; i++)
+        -:  281:  {
+    #####:  282:    if (compiler->loop_identifier[i] != NULL &&
+    #####:  283:        strcmp(identifier, compiler->loop_identifier[i]) == 0)
+    #####:  284:      return i;
+        -:  285:  }
+        -:  286:
+    #####:  287:  return -1;
+        -:  288:}
+        -:  289:
+        -:  290:
+    #####:  291:static int _yr_parser_write_string(
+        -:  292:    const char* identifier,
+        -:  293:    int flags,
+        -:  294:    YR_COMPILER* compiler,
+        -:  295:    SIZED_STRING* str,
+        -:  296:    RE_AST* re_ast,
+        -:  297:    YR_STRING** string,
+        -:  298:    int* min_atom_quality,
+        -:  299:    int* num_atom)
+        -:  300:{
+        -:  301:  SIZED_STRING* literal_string;
+        -:  302:  YR_ATOM_LIST_ITEM* atom;
+    #####:  303:  YR_ATOM_LIST_ITEM* atom_list = NULL;
+        -:  304:
+        -:  305:  int c, result;
+        -:  306:  int max_string_len;
+    #####:  307:  bool free_literal = false;
+        -:  308:
+    #####:  309:  *string = NULL;
+        -:  310:
+    #####:  311:  result = yr_arena_allocate_struct(
+        -:  312:      compiler->strings_arena,
+        -:  313:      sizeof(YR_STRING),
+        -:  314:      (void**) string,
+        -:  315:      offsetof(YR_STRING, identifier),
+        -:  316:      offsetof(YR_STRING, string),
+        -:  317:      offsetof(YR_STRING, chained_to),
+        -:  318:      offsetof(YR_STRING, rule),
+        -:  319:      EOL);
+        -:  320:
+    #####:  321:  if (result != ERROR_SUCCESS)
+    #####:  322:    return result;
+        -:  323:
+    #####:  324:  result = yr_arena_write_string(
+        -:  325:      compiler->sz_arena,
+        -:  326:      identifier,
+    #####:  327:      &(*string)->identifier);
+        -:  328:
+    #####:  329:  if (result != ERROR_SUCCESS)
+    #####:  330:    return result;
+        -:  331:
+    #####:  332:  if (flags & STRING_GFLAGS_HEXADECIMAL ||
+    #####:  333:      flags & STRING_GFLAGS_REGEXP)
+        -:  334:  {
+    #####:  335:    literal_string = yr_re_ast_extract_literal(re_ast);
+        -:  336:
+    #####:  337:    if (literal_string != NULL)
+        -:  338:    {
+    #####:  339:      flags |= STRING_GFLAGS_LITERAL;
+    #####:  340:      free_literal = true;
+        -:  341:    }
+        -:  342:    else
+        -:  343:    {
+        -:  344:      // Non-literal strings can't be marked as fixed offset because once we
+        -:  345:      // find a string atom in the scanned data we don't know the offset where
+        -:  346:      // the string should start, as the non-literal strings can contain
+        -:  347:      // variable-length portions.
+        -:  348:
+    #####:  349:      flags &= ~STRING_GFLAGS_FIXED_OFFSET;
+        -:  350:    }
+        -:  351:  }
+        -:  352:  else
+        -:  353:  {
+    #####:  354:    literal_string = str;
+    #####:  355:    flags |= STRING_GFLAGS_LITERAL;
+        -:  356:  }
+        -:  357:
+    #####:  358:  (*string)->g_flags = flags;
+    #####:  359:  (*string)->chained_to = NULL;
+    #####:  360:  (*string)->fixed_offset = UNDEFINED;
+    #####:  361:  (*string)->rule = compiler->current_rule;
+        -:  362:
+    #####:  363:  memset((*string)->matches, 0,
+        -:  364:         sizeof((*string)->matches));
+        -:  365:
+    #####:  366:  memset((*string)->unconfirmed_matches, 0,
+        -:  367:         sizeof((*string)->unconfirmed_matches));
+        -:  368:
+    #####:  369:  if (flags & STRING_GFLAGS_LITERAL)
+        -:  370:  {
+    #####:  371:    (*string)->length = (uint32_t) literal_string->length;
+        -:  372:
+    #####:  373:    result = yr_arena_write_data(
+        -:  374:        compiler->sz_arena,
+    #####:  375:        literal_string->c_string,
+    #####:  376:        literal_string->length + 1,   // +1 to include terminating NULL
+    #####:  377:        (void**) &(*string)->string);
+        -:  378:
+    #####:  379:    if (result == ERROR_SUCCESS)
+        -:  380:    {
+    #####:  381:      result = yr_atoms_extract_from_string(
+        -:  382:          &compiler->atoms_config,
+    #####:  383:          (uint8_t*) literal_string->c_string,
+    #####:  384:          (int32_t) literal_string->length,
+        -:  385:          flags,
+        -:  386:          &atom_list,
+        -:  387:          min_atom_quality);
+        -:  388:    }
+        -:  389:  }
+        -:  390:  else
+        -:  391:  {
+        -:  392:    // Emit forwards code
+    #####:  393:    result = yr_re_ast_emit_code(re_ast, compiler->re_code_arena, false);
+        -:  394:
+        -:  395:    // Emit backwards code
+    #####:  396:    if (result == ERROR_SUCCESS)
+    #####:  397:      result = yr_re_ast_emit_code(re_ast, compiler->re_code_arena, true);
+        -:  398:
+    #####:  399:    if (result == ERROR_SUCCESS)
+    #####:  400:      result = yr_atoms_extract_from_re(
+        -:  401:          &compiler->atoms_config,
+        -:  402:          re_ast,
+        -:  403:          flags,
+        -:  404:          &atom_list,
+        -:  405:          min_atom_quality);
+        -:  406:  }
+        -:  407:
+    #####:  408:  if (result == ERROR_SUCCESS)
+        -:  409:  {
+        -:  410:    // Add the string to Aho-Corasick automaton.
+    #####:  411:    result = yr_ac_add_string(
+        -:  412:        compiler->automaton,
+        -:  413:        *string,
+        -:  414:        atom_list,
+        -:  415:        compiler->matches_arena);
+        -:  416:  }
+        -:  417:
+    #####:  418:  if (flags & STRING_GFLAGS_LITERAL)
+        -:  419:  {
+    #####:  420:    if (flags & STRING_GFLAGS_WIDE)
+    #####:  421:      max_string_len = (*string)->length * 2;
+        -:  422:    else
+    #####:  423:      max_string_len = (*string)->length;
+        -:  424:
+    #####:  425:    if (max_string_len <= YR_MAX_ATOM_LENGTH)
+    #####:  426:      (*string)->g_flags |= STRING_GFLAGS_FITS_IN_ATOM;
+        -:  427:  }
+        -:  428:
+    #####:  429:  atom = atom_list;
+    #####:  430:  c = 0;
+        -:  431:
+    #####:  432:  while (atom != NULL)
+        -:  433:  {
+    #####:  434:    atom = atom->next;
+    #####:  435:    c++;
+        -:  436:  }
+        -:  437:
+    #####:  438:  (*num_atom) += c;
+        -:  439:
+    #####:  440:  if (free_literal)
+    #####:  441:    yr_free(literal_string);
+        -:  442:
+    #####:  443:  if (atom_list != NULL)
+    #####:  444:    yr_atoms_list_destroy(atom_list);
+        -:  445:
+    #####:  446:  return result;
+        -:  447:}
+        -:  448:
+        -:  449:#include <limits.h>
+        -:  450:
+        -:  451:#include <yara/integers.h>
+        -:  452:
+        -:  453:
+    #####:  454:int yr_parser_reduce_string_declaration(
+        -:  455:    yyscan_t yyscanner,
+        -:  456:    int32_t string_flags,
+        -:  457:    const char* identifier,
+        -:  458:    SIZED_STRING* str,
+        -:  459:    YR_STRING** string)
+        -:  460:{
+    #####:  461:  int min_atom_quality = YR_MIN_ATOM_QUALITY;
+    #####:  462:  int min_atom_quality_aux = YR_MIN_ATOM_QUALITY;
+        -:  463:
+        -:  464:  int32_t min_gap;
+        -:  465:  int32_t max_gap;
+        -:  466:
+        -:  467:  char message[512];
+        -:  468:
+    #####:  469:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -:  470:  YR_STRING* aux_string;
+        -:  471:  YR_STRING* prev_string;
+        -:  472:
+    #####:  473:  RE_AST* re_ast = NULL;
+    #####:  474:  RE_AST* remainder_re_ast = NULL;
+        -:  475:
+        -:  476:  RE_ERROR re_error;
+        -:  477:
+    #####:  478:  int result = ERROR_SUCCESS;
+        -:  479:
+        -:  480:  // Determine if a string with the same identifier was already defined
+        -:  481:  // by searching for the identifier in string_table.
+        -:  482:
+    #####:  483:  *string = (YR_STRING*) yr_hash_table_lookup(
+        -:  484:      compiler->strings_table,
+        -:  485:      identifier,
+        -:  486:      NULL);
+        -:  487:
+    #####:  488:  if (*string != NULL)
+        -:  489:  {
+    #####:  490:    result = ERROR_DUPLICATED_STRING_IDENTIFIER;
+    #####:  491:    yr_compiler_set_error_extra_info(compiler, identifier);
+    #####:  492:    goto _exit;
+        -:  493:  }
+        -:  494:
+        -:  495:  // Empty strings are not allowed
+        -:  496:
+    #####:  497:  if (str->length == 0)
+        -:  498:  {
+    #####:  499:    result = ERROR_EMPTY_STRING;
+    #####:  500:    yr_compiler_set_error_extra_info(compiler, identifier);
+    #####:  501:    goto _exit;
+        -:  502:  }
+        -:  503:
+    #####:  504:  if (str->flags & SIZED_STRING_FLAGS_NO_CASE)
+    #####:  505:    string_flags |= STRING_GFLAGS_NO_CASE;
+        -:  506:
+    #####:  507:  if (str->flags & SIZED_STRING_FLAGS_DOT_ALL)
+    #####:  508:    string_flags |= STRING_GFLAGS_DOT_ALL;
+        -:  509:
+    #####:  510:  if (strcmp(identifier,"$") == 0)
+    #####:  511:    string_flags |= STRING_GFLAGS_ANONYMOUS;
+        -:  512:
+    #####:  513:  if (!(string_flags & STRING_GFLAGS_WIDE) &&
+    #####:  514:      !(string_flags & STRING_GFLAGS_XOR))
+    #####:  515:    string_flags |= STRING_GFLAGS_ASCII;
+        -:  516:
+        -:  517:  // Hex strings are always handled as DOT_ALL regexps.
+        -:  518:
+    #####:  519:  if (string_flags & STRING_GFLAGS_HEXADECIMAL)
+    #####:  520:    string_flags |= STRING_GFLAGS_DOT_ALL;
+        -:  521:
+        -:  522:  // The STRING_GFLAGS_SINGLE_MATCH flag indicates that finding
+        -:  523:  // a single match for the string is enough. This is true in
+        -:  524:  // most cases, except when the string count (#) and string offset (@)
+        -:  525:  // operators are used. All strings are marked STRING_FLAGS_SINGLE_MATCH
+        -:  526:  // initially, and unmarked later if required.
+        -:  527:
+    #####:  528:  string_flags |= STRING_GFLAGS_SINGLE_MATCH;
+        -:  529:
+        -:  530:  // The STRING_GFLAGS_FIXED_OFFSET indicates that the string doesn't
+        -:  531:  // need to be searched all over the file because the user is using the
+        -:  532:  // "at" operator. The string must be searched at a fixed offset in the
+        -:  533:  // file. All strings are marked STRING_GFLAGS_FIXED_OFFSET initially,
+        -:  534:  // and unmarked later if required.
+        -:  535:
+    #####:  536:  string_flags |= STRING_GFLAGS_FIXED_OFFSET;
+        -:  537:
+    #####:  538:  if (string_flags & STRING_GFLAGS_HEXADECIMAL ||
+    #####:  539:      string_flags & STRING_GFLAGS_REGEXP)
+        -:  540:  {
+    #####:  541:    if (string_flags & STRING_GFLAGS_HEXADECIMAL)
+    #####:  542:      result = yr_re_parse_hex(str->c_string, &re_ast, &re_error);
+        -:  543:    else
+    #####:  544:      result = yr_re_parse(str->c_string, &re_ast, &re_error);
+        -:  545:
+    #####:  546:    if (result != ERROR_SUCCESS)
+        -:  547:    {
+    #####:  548:      snprintf(
+        -:  549:          message,
+        -:  550:          sizeof(message),
+        -:  551:          "invalid %s \"%s\": %s",
+    #####:  552:          (string_flags & STRING_GFLAGS_HEXADECIMAL) ?
+        -:  553:              "hex string" : "regular expression",
+        -:  554:          identifier,
+        -:  555:          re_error.message);
+        -:  556:
+    #####:  557:      yr_compiler_set_error_extra_info(
+        -:  558:          compiler, message);
+        -:  559:
+    #####:  560:      goto _exit;
+        -:  561:    }
+        -:  562:
+    #####:  563:    if (re_ast->flags & RE_FLAGS_FAST_REGEXP)
+    #####:  564:      string_flags |= STRING_GFLAGS_FAST_REGEXP;
+        -:  565:
+        -:  566:    // Regular expressions in the strings section can't mix greedy and ungreedy
+        -:  567:    // quantifiers like .* and .*?. That's because these regular expressions can
+        -:  568:    // be matched forwards and/or backwards depending on the atom found, and we
+        -:  569:    // need the regexp to be all-greedy or all-ungreedy to be able to properly
+        -:  570:    // calculate the length of the match.
+        -:  571:
+    #####:  572:    if ((re_ast->flags & RE_FLAGS_GREEDY) &&
+    #####:  573:        (re_ast->flags & RE_FLAGS_UNGREEDY))
+        -:  574:    {
+    #####:  575:      result = ERROR_INVALID_REGULAR_EXPRESSION;
+        -:  576:
+    #####:  577:      yr_compiler_set_error_extra_info(compiler,
+        -:  578:          "greedy and ungreedy quantifiers can't be mixed in a regular "
+        -:  579:          "expression");
+        -:  580:
+    #####:  581:      goto _exit;
+        -:  582:    }
+        -:  583:
+    #####:  584:    if (re_ast->flags & RE_FLAGS_GREEDY)
+    #####:  585:      string_flags |= STRING_GFLAGS_GREEDY_REGEXP;
+        -:  586:
+    #####:  587:    if (yr_re_ast_contains_dot_star(re_ast))
+        -:  588:    {
+    #####:  589:      yywarning(
+        -:  590:          yyscanner,
+        -:  591:          "%s contains .* or .+, consider using .{,N} or .{1,N} with a reasonable value for N",
+        -:  592:          identifier);
+        -:  593:    }
+        -:  594:
+    #####:  595:    if (compiler->re_ast_callback != NULL)
+        -:  596:    {
+    #####:  597:      compiler->re_ast_callback(
+    #####:  598:          compiler->current_rule,
+        -:  599:          identifier,
+        -:  600:          re_ast,
+        -:  601:          compiler->re_ast_clbk_user_data);
+        -:  602:    }
+        -:  603:
+    #####:  604:    result = yr_re_ast_split_at_chaining_point(
+        -:  605:        re_ast, &re_ast, &remainder_re_ast, &min_gap, &max_gap);
+        -:  606:
+    #####:  607:    if (result != ERROR_SUCCESS)
+    #####:  608:      goto _exit;
+        -:  609:
+    #####:  610:    result = _yr_parser_write_string(
+        -:  611:        identifier,
+        -:  612:        string_flags,
+        -:  613:        compiler,
+        -:  614:        NULL,
+        -:  615:        re_ast,
+        -:  616:        string,
+        -:  617:        &min_atom_quality,
+    #####:  618:        &compiler->current_rule->num_atoms);
+        -:  619:
+    #####:  620:    if (result != ERROR_SUCCESS)
+    #####:  621:      goto _exit;
+        -:  622:
+    #####:  623:    if (remainder_re_ast != NULL)
+        -:  624:    {
+    #####:  625:      (*string)->g_flags |= STRING_GFLAGS_CHAIN_TAIL | STRING_GFLAGS_CHAIN_PART;
+    #####:  626:      (*string)->chain_gap_min = min_gap;
+    #####:  627:      (*string)->chain_gap_max = max_gap;
+        -:  628:    }
+        -:  629:
+        -:  630:    // Use "aux_string" from now on, we want to keep the value of "string"
+        -:  631:    // because it will returned.
+        -:  632:
+    #####:  633:    aux_string = *string;
+        -:  634:
+    #####:  635:    while (remainder_re_ast != NULL)
+        -:  636:    {
+        -:  637:      // Destroy regexp pointed by 're_ast' before yr_re_split_at_chaining_point
+        -:  638:      // overwrites 're_ast' with another value.
+        -:  639:
+    #####:  640:      yr_re_ast_destroy(re_ast);
+        -:  641:
+    #####:  642:      result = yr_re_ast_split_at_chaining_point(
+        -:  643:          remainder_re_ast, &re_ast, &remainder_re_ast, &min_gap, &max_gap);
+        -:  644:
+    #####:  645:      if (result != ERROR_SUCCESS)
+    #####:  646:        goto _exit;
+        -:  647:
+    #####:  648:      prev_string = aux_string;
+        -:  649:
+    #####:  650:      result = _yr_parser_write_string(
+        -:  651:          identifier,
+        -:  652:          string_flags,
+        -:  653:          compiler,
+        -:  654:          NULL,
+        -:  655:          re_ast,
+        -:  656:          &aux_string,
+        -:  657:          &min_atom_quality_aux,
+    #####:  658:          &compiler->current_rule->num_atoms);
+        -:  659:
+    #####:  660:      if (result != ERROR_SUCCESS)
+    #####:  661:        goto _exit;
+        -:  662:
+    #####:  663:      if (min_atom_quality_aux < min_atom_quality)
+    #####:  664:        min_atom_quality = min_atom_quality_aux;
+        -:  665:
+    #####:  666:      aux_string->g_flags |= STRING_GFLAGS_CHAIN_PART;
+    #####:  667:      aux_string->chain_gap_min = min_gap;
+    #####:  668:      aux_string->chain_gap_max = max_gap;
+        -:  669:
+    #####:  670:      prev_string->chained_to = aux_string;
+        -:  671:
+        -:  672:      // prev_string is now chained to aux_string, an string chained
+        -:  673:      // to another one can't have a fixed offset, only the head of the
+        -:  674:      // string chain can have a fixed offset.
+        -:  675:
+    #####:  676:      prev_string->g_flags &= ~STRING_GFLAGS_FIXED_OFFSET;
+        -:  677:    }
+        -:  678:  }
+        -:  679:  else
+        -:  680:  {
+    #####:  681:    result = _yr_parser_write_string(
+        -:  682:        identifier,
+        -:  683:        string_flags,
+        -:  684:        compiler,
+        -:  685:        str,
+        -:  686:        NULL,
+        -:  687:        string,
+        -:  688:        &min_atom_quality,
+    #####:  689:        &compiler->current_rule->num_atoms);
+        -:  690:
+    #####:  691:    if (result != ERROR_SUCCESS)
+    #####:  692:      goto _exit;
+        -:  693:  }
+        -:  694:
+    #####:  695:  if (!STRING_IS_ANONYMOUS(*string))
+        -:  696:  {
+    #####:  697:    result = yr_hash_table_add(
+        -:  698:      compiler->strings_table,
+        -:  699:      identifier,
+        -:  700:      NULL,
+        -:  701:      *string);
+        -:  702:
+    #####:  703:    if (result != ERROR_SUCCESS)
+    #####:  704:      goto _exit;
+        -:  705:  }
+        -:  706:
+    #####:  707:  if (min_atom_quality < compiler->atoms_config.quality_warning_threshold)
+        -:  708:  {
+    #####:  709:    yywarning(
+        -:  710:        yyscanner,
+        -:  711:        "%s in rule %s is slowing down scanning",
+    #####:  712:        (*string)->identifier,
+    #####:  713:        compiler->current_rule->identifier);
+        -:  714:  }
+        -:  715:
+    #####:  716:_exit:
+        -:  717:
+    #####:  718:  if (re_ast != NULL)
+    #####:  719:    yr_re_ast_destroy(re_ast);
+        -:  720:
+    #####:  721:  if (remainder_re_ast != NULL)
+    #####:  722:    yr_re_ast_destroy(remainder_re_ast);
+        -:  723:
+    #####:  724:  return result;
+        -:  725:}
+        -:  726:
+        -:  727:
+    #####:  728:int yr_parser_reduce_rule_declaration_phase_1(
+        -:  729:    yyscan_t yyscanner,
+        -:  730:    int32_t flags,
+        -:  731:    const char* identifier,
+        -:  732:    YR_RULE** rule)
+        -:  733:{
+        -:  734:  YR_FIXUP *fixup;
+        -:  735:  YR_INIT_RULE_ARGS *init_rule_args;
+    #####:  736:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -:  737:
+    #####:  738:  *rule = NULL;
+        -:  739:
+    #####:  740:  if (yr_hash_table_lookup(
+        -:  741:        compiler->rules_table,
+        -:  742:        identifier,
+    #####:  743:        compiler->current_namespace->name) != NULL ||
+    #####:  744:      yr_hash_table_lookup(
+        -:  745:        compiler->objects_table,
+        -:  746:        identifier,
+        -:  747:        NULL) != NULL)
+        -:  748:  {
+        -:  749:    // A rule or variable with the same identifier already exists, return the
+        -:  750:    // appropriate error.
+        -:  751:
+    #####:  752:    yr_compiler_set_error_extra_info(compiler, identifier);
+    #####:  753:    return ERROR_DUPLICATED_IDENTIFIER;
+        -:  754:  }
+        -:  755:
+    #####:  756:  FAIL_ON_ERROR(yr_arena_allocate_struct(
+        -:  757:      compiler->rules_arena,
+        -:  758:      sizeof(YR_RULE),
+        -:  759:      (void**) rule,
+        -:  760:      offsetof(YR_RULE, identifier),
+        -:  761:      offsetof(YR_RULE, tags),
+        -:  762:      offsetof(YR_RULE, strings),
+        -:  763:      offsetof(YR_RULE, metas),
+        -:  764:      offsetof(YR_RULE, ns),
+        -:  765:      EOL))
+        -:  766:
+    #####:  767:  (*rule)->g_flags = flags;
+    #####:  768:  (*rule)->ns = compiler->current_namespace;
+    #####:  769:  (*rule)->num_atoms = 0;
+        -:  770:
+        -:  771:  #ifdef PROFILING_ENABLED
+        -:  772:  (*rule)->time_cost = 0;
+        -:  773:
+        -:  774:  memset(
+        -:  775:      (*rule)->time_cost_per_thread, 0, sizeof((*rule)->time_cost_per_thread));
+        -:  776:  #endif
+        -:  777:
+    #####:  778:  FAIL_ON_ERROR(yr_arena_write_string(
+        -:  779:      compiler->sz_arena,
+        -:  780:      identifier,
+        -:  781:      (char**) &(*rule)->identifier));
+        -:  782:
+    #####:  783:  FAIL_ON_ERROR(yr_parser_emit(
+        -:  784:      yyscanner,
+        -:  785:      OP_INIT_RULE,
+        -:  786:      NULL));
+        -:  787:
+    #####:  788:  FAIL_ON_ERROR(yr_arena_allocate_struct(
+        -:  789:      compiler->code_arena,
+        -:  790:      sizeof(YR_INIT_RULE_ARGS),
+        -:  791:      (void**) &init_rule_args,
+        -:  792:      offsetof(YR_INIT_RULE_ARGS, rule),
+        -:  793:      offsetof(YR_INIT_RULE_ARGS, jmp_addr),
+        -:  794:      EOL));
+        -:  795:
+    #####:  796:  init_rule_args->rule = *rule;
+        -:  797:
+        -:  798:  // jmp_addr holds the address to jump to when we want to skip the code for
+        -:  799:  // the rule. It is iniatialized as NULL at this point because we don't know
+        -:  800:  // the address until emmiting the code for the rule's condition. The address
+        -:  801:  // is set in yr_parser_reduce_rule_declaration_phase_2.
+    #####:  802:  init_rule_args->jmp_addr = NULL;
+        -:  803:
+        -:  804:  // Create a fixup entry for the jump and push it in the stack
+    #####:  805:  fixup = (YR_FIXUP*) yr_malloc(sizeof(YR_FIXUP));
+        -:  806:
+    #####:  807:  if (fixup == NULL)
+    #####:  808:    return ERROR_INSUFFICIENT_MEMORY;
+        -:  809:
+    #####:  810:  fixup->address = (void*) &(init_rule_args->jmp_addr);
+    #####:  811:  fixup->next = compiler->fixup_stack_head;
+    #####:  812:  compiler->fixup_stack_head = fixup;
+        -:  813:
+        -:  814:  // Clean strings_table as we are starting to parse a new rule.
+    #####:  815:  yr_hash_table_clean(compiler->strings_table, NULL);
+        -:  816:
+    #####:  817:  FAIL_ON_ERROR(yr_hash_table_add(
+        -:  818:      compiler->rules_table,
+        -:  819:      identifier,
+        -:  820:      compiler->current_namespace->name,
+        -:  821:      (void*) *rule));
+        -:  822:
+    #####:  823:  compiler->current_rule = *rule;
+        -:  824:
+    #####:  825:  return ERROR_SUCCESS;
+        -:  826:}
+        -:  827:
+    #####:  828:int yr_parser_reduce_rule_declaration_phase_2(
+        -:  829:    yyscan_t yyscanner,
+        -:  830:    YR_RULE* rule)
+        -:  831:{
+        -:  832:  uint32_t max_strings_per_rule;
+    #####:  833:  uint32_t strings_in_rule = 0;
+    #####:  834:  uint8_t* nop_inst_addr = NULL;
+        -:  835:
+        -:  836:  int result;
+        -:  837:
+        -:  838:  YR_FIXUP *fixup;
+        -:  839:  YR_STRING* string;
+    #####:  840:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -:  841:
+    #####:  842:  yr_get_configuration(
+        -:  843:      YR_CONFIG_MAX_STRINGS_PER_RULE,
+        -:  844:      (void*) &max_strings_per_rule);
+        -:  845:
+        -:  846:  // Show warning if the rule is generating too many atoms. The warning is
+        -:  847:  // shown if the number of atoms is greater than 20 times the maximum number
+        -:  848:  // of strings allowed for a rule, as 20 is minimum number of atoms generated
+        -:  849:  // for a string using *nocase*, *ascii* and *wide* modifiers simultaneosly.
+        -:  850:
+    #####:  851:  if (rule->num_atoms > YR_ATOMS_PER_RULE_WARNING_THRESHOLD)
+        -:  852:  {
+    #####:  853:    yywarning(
+        -:  854:        yyscanner,
+        -:  855:        "rule %s is slowing down scanning",
+        -:  856:        rule->identifier);
+        -:  857:  }
+        -:  858:
+        -:  859:  // Check for unreferenced (unused) strings.
+    #####:  860:  string = rule->strings;
+        -:  861:
+    #####:  862:  while (!STRING_IS_NULL(string))
+        -:  863:  {
+        -:  864:    // Only the heading fragment in a chain of strings (the one with
+        -:  865:    // chained_to == NULL) must be referenced. All other fragments
+        -:  866:    // are never marked as referenced.
+        -:  867:
+    #####:  868:    if (!STRING_IS_REFERENCED(string) &&
+    #####:  869:        string->chained_to == NULL)
+        -:  870:    {
+    #####:  871:      yr_compiler_set_error_extra_info(compiler, string->identifier);
+    #####:  872:      return ERROR_UNREFERENCED_STRING;
+        -:  873:    }
+        -:  874:
+    #####:  875:    strings_in_rule++;
+        -:  876:
+    #####:  877:    if (strings_in_rule > max_strings_per_rule)
+        -:  878:    {
+    #####:  879:      yr_compiler_set_error_extra_info(compiler, rule->identifier);
+    #####:  880:      return ERROR_TOO_MANY_STRINGS;
+        -:  881:    }
+        -:  882:
+    #####:  883:    string = (YR_STRING*) yr_arena_next_address(
+        -:  884:        compiler->strings_arena,
+        -:  885:        string,
+        -:  886:        sizeof(YR_STRING));
+        -:  887:  }
+        -:  888:
+    #####:  889:  result = yr_parser_emit_with_arg_reloc(
+        -:  890:      yyscanner,
+        -:  891:      OP_MATCH_RULE,
+        -:  892:      rule,
+        -:  893:      NULL,
+        -:  894:      NULL);
+        -:  895:
+        -:  896:  // Generate a do-nothing instruction (NOP) in order to get its address
+        -:  897:  // and use it as the destination for the OP_INIT_RULE skip jump. We can not
+        -:  898:  // simply use the address of the OP_MATCH_RULE instruction +1 because we
+        -:  899:  // can't be sure that the instruction following the OP_MATCH_RULE is going to
+        -:  900:  // be in the same arena page. As we don't have a reliable way of getting the
+        -:  901:  // address of the next instruction we generate the OP_NOP.
+        -:  902:
+    #####:  903:  if (result == ERROR_SUCCESS)
+    #####:  904:    result = yr_parser_emit(yyscanner, OP_NOP, &nop_inst_addr);
+        -:  905:
+    #####:  906:  fixup = compiler->fixup_stack_head;
+    #####:  907:  *(void**)(fixup->address) = (void*) nop_inst_addr;
+    #####:  908:  compiler->fixup_stack_head = fixup->next;
+    #####:  909:  yr_free(fixup);
+        -:  910:
+    #####:  911:  return result;
+        -:  912:}
+        -:  913:
+        -:  914:
+    #####:  915:int yr_parser_reduce_string_identifier(
+        -:  916:    yyscan_t yyscanner,
+        -:  917:    const char* identifier,
+        -:  918:    uint8_t instruction,
+        -:  919:    uint64_t at_offset)
+        -:  920:{
+        -:  921:  YR_STRING* string;
+    #####:  922:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -:  923:
+    #####:  924:  if (strcmp(identifier, "$") == 0) // is an anonymous string ?
+        -:  925:  {
+    #####:  926:    if (compiler->loop_for_of_mem_offset >= 0) // inside a loop ?
+        -:  927:    {
+    #####:  928:      yr_parser_emit_with_arg(
+        -:  929:          yyscanner,
+        -:  930:          OP_PUSH_M,
+    #####:  931:          compiler->loop_for_of_mem_offset,
+        -:  932:          NULL,
+        -:  933:          NULL);
+        -:  934:
+    #####:  935:      yr_parser_emit(yyscanner, instruction, NULL);
+        -:  936:
+    #####:  937:      string = compiler->current_rule->strings;
+        -:  938:
+    #####:  939:      while(!STRING_IS_NULL(string))
+        -:  940:      {
+    #####:  941:        if (instruction != OP_FOUND)
+    #####:  942:          string->g_flags &= ~STRING_GFLAGS_SINGLE_MATCH;
+        -:  943:
+    #####:  944:        if (instruction == OP_FOUND_AT)
+        -:  945:        {
+        -:  946:          // Avoid overwriting any previous fixed offset
+        -:  947:
+    #####:  948:          if (string->fixed_offset == UNDEFINED)
+    #####:  949:            string->fixed_offset = at_offset;
+        -:  950:
+        -:  951:          // If a previous fixed offset was different, disable
+        -:  952:          // the STRING_GFLAGS_FIXED_OFFSET flag because we only
+        -:  953:          // have room to store a single fixed offset value
+        -:  954:
+    #####:  955:          if (string->fixed_offset != at_offset)
+    #####:  956:            string->g_flags &= ~STRING_GFLAGS_FIXED_OFFSET;
+        -:  957:        }
+        -:  958:        else
+        -:  959:        {
+    #####:  960:          string->g_flags &= ~STRING_GFLAGS_FIXED_OFFSET;
+        -:  961:        }
+        -:  962:
+    #####:  963:        string = (YR_STRING*) yr_arena_next_address(
+        -:  964:            compiler->strings_arena,
+        -:  965:            string,
+        -:  966:            sizeof(YR_STRING));
+        -:  967:      }
+        -:  968:    }
+        -:  969:    else
+        -:  970:    {
+        -:  971:      // Anonymous strings not allowed outside of a loop
+    #####:  972:      return ERROR_MISPLACED_ANONYMOUS_STRING;
+        -:  973:    }
+        -:  974:  }
+        -:  975:  else
+        -:  976:  {
+    #####:  977:    FAIL_ON_ERROR(yr_parser_lookup_string(
+        -:  978:        yyscanner, identifier, &string));
+        -:  979:
+    #####:  980:    FAIL_ON_ERROR(yr_parser_emit_with_arg_reloc(
+        -:  981:        yyscanner,
+        -:  982:        OP_PUSH,
+        -:  983:        string,
+        -:  984:        NULL,
+        -:  985:        NULL));
+        -:  986:
+    #####:  987:    if (instruction != OP_FOUND)
+    #####:  988:      string->g_flags &= ~STRING_GFLAGS_SINGLE_MATCH;
+        -:  989:
+    #####:  990:    if (instruction == OP_FOUND_AT)
+        -:  991:    {
+        -:  992:      // Avoid overwriting any previous fixed offset
+        -:  993:
+    #####:  994:      if (string->fixed_offset == UNDEFINED)
+    #####:  995:        string->fixed_offset = at_offset;
+        -:  996:
+        -:  997:      // If a previous fixed offset was different, disable
+        -:  998:      // the STRING_GFLAGS_FIXED_OFFSET flag because we only
+        -:  999:      // have room to store a single fixed offset value
+        -: 1000:
+    #####: 1001:      if (string->fixed_offset == UNDEFINED ||
+    #####: 1002:          string->fixed_offset != at_offset)
+        -: 1003:      {
+    #####: 1004:        string->g_flags &= ~STRING_GFLAGS_FIXED_OFFSET;
+        -: 1005:      }
+        -: 1006:    }
+        -: 1007:    else
+        -: 1008:    {
+    #####: 1009:      string->g_flags &= ~STRING_GFLAGS_FIXED_OFFSET;
+        -: 1010:    }
+        -: 1011:
+    #####: 1012:    FAIL_ON_ERROR(yr_parser_emit(yyscanner, instruction, NULL));
+        -: 1013:
+    #####: 1014:    string->g_flags |= STRING_GFLAGS_REFERENCED;
+        -: 1015:  }
+        -: 1016:
+    #####: 1017:  return ERROR_SUCCESS;
+        -: 1018:}
+        -: 1019:
+        -: 1020:
+    #####: 1021:int yr_parser_reduce_meta_declaration(
+        -: 1022:    yyscan_t yyscanner,
+        -: 1023:    int32_t type,
+        -: 1024:    const char* identifier,
+        -: 1025:    const char* string,
+        -: 1026:    int64_t integer,
+        -: 1027:    YR_META** meta)
+        -: 1028:{
+    #####: 1029:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -: 1030:
+    #####: 1031:  FAIL_ON_ERROR(yr_arena_allocate_struct(
+        -: 1032:      compiler->metas_arena,
+        -: 1033:      sizeof(YR_META),
+        -: 1034:      (void**) meta,
+        -: 1035:      offsetof(YR_META, identifier),
+        -: 1036:      offsetof(YR_META, string),
+        -: 1037:      EOL));
+        -: 1038:
+    #####: 1039:  FAIL_ON_ERROR(yr_arena_write_string(
+        -: 1040:      compiler->sz_arena,
+        -: 1041:      identifier,
+        -: 1042:      (char**) &(*meta)->identifier));
+        -: 1043:
+    #####: 1044:  if (string != NULL)
+        -: 1045:  {
+    #####: 1046:    FAIL_ON_ERROR(yr_arena_write_string(
+        -: 1047:        compiler->sz_arena,
+        -: 1048:        string,
+        -: 1049:        &(*meta)->string));
+        -: 1050:  }
+        -: 1051:  else
+        -: 1052:  {
+    #####: 1053:    (*meta)->string = NULL;
+        -: 1054:  }
+        -: 1055:
+    #####: 1056:  (*meta)->integer = integer;
+    #####: 1057:  (*meta)->type = type;
+        -: 1058:
+    #####: 1059:  return ERROR_SUCCESS;
+        -: 1060:}
+        -: 1061:
+        -: 1062:
+    #####: 1063:static int _yr_parser_valid_module_name(
+        -: 1064:    SIZED_STRING* module_name)
+        -: 1065:{
+    #####: 1066:  if (module_name->length == 0)
+    #####: 1067:    return false;
+        -: 1068:
+    #####: 1069:  if (strlen(module_name->c_string) != module_name->length)
+    #####: 1070:    return false;
+        -: 1071:
+    #####: 1072:  return true;
+        -: 1073:}
+        -: 1074:
+        -: 1075:
+    #####: 1076:int yr_parser_reduce_import(
+        -: 1077:    yyscan_t yyscanner,
+        -: 1078:    SIZED_STRING* module_name)
+        -: 1079:{
+        -: 1080:  int result;
+        -: 1081:
+    #####: 1082:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -: 1083:  YR_OBJECT* module_structure;
+        -: 1084:
+        -: 1085:  char* name;
+        -: 1086:
+    #####: 1087:  if (!_yr_parser_valid_module_name(module_name))
+        -: 1088:  {
+    #####: 1089:    yr_compiler_set_error_extra_info(compiler, module_name->c_string);
+    #####: 1090:    return ERROR_INVALID_MODULE_NAME;
+        -: 1091:  }
+        -: 1092:
+    #####: 1093:  module_structure = (YR_OBJECT*) yr_hash_table_lookup(
+        -: 1094:      compiler->objects_table,
+    #####: 1095:      module_name->c_string,
+    #####: 1096:      compiler->current_namespace->name);
+        -: 1097:
+        -: 1098:  // if module already imported, do nothing
+        -: 1099:
+    #####: 1100:  if (module_structure != NULL)
+    #####: 1101:    return ERROR_SUCCESS;
+        -: 1102:
+    #####: 1103:  FAIL_ON_ERROR(yr_object_create(
+        -: 1104:      OBJECT_TYPE_STRUCTURE,
+        -: 1105:      module_name->c_string,
+        -: 1106:      NULL,
+        -: 1107:      &module_structure));
+        -: 1108:
+    #####: 1109:  FAIL_ON_ERROR(yr_hash_table_add(
+        -: 1110:      compiler->objects_table,
+        -: 1111:      module_name->c_string,
+        -: 1112:      compiler->current_namespace->name,
+        -: 1113:      module_structure));
+        -: 1114:
+    #####: 1115:  result = yr_modules_do_declarations(
+    #####: 1116:      module_name->c_string,
+        -: 1117:      module_structure);
+        -: 1118:
+    #####: 1119:  if (result == ERROR_UNKNOWN_MODULE)
+    #####: 1120:    yr_compiler_set_error_extra_info(compiler, module_name->c_string);
+        -: 1121:
+    #####: 1122:  if (result != ERROR_SUCCESS)
+    #####: 1123:    return result;
+        -: 1124:
+    #####: 1125:  FAIL_ON_ERROR(yr_arena_write_string(
+        -: 1126:      compiler->sz_arena,
+        -: 1127:      module_name->c_string,
+        -: 1128:      &name));
+        -: 1129:
+    #####: 1130:  FAIL_ON_ERROR(yr_parser_emit_with_arg_reloc(
+        -: 1131:        yyscanner,
+        -: 1132:        OP_IMPORT,
+        -: 1133:        name,
+        -: 1134:        NULL,
+        -: 1135:        NULL));
+        -: 1136:
+    #####: 1137:  return ERROR_SUCCESS;
+        -: 1138:}
+        -: 1139:
+        -: 1140:
+    #####: 1141:static int _yr_parser_operator_to_opcode(
+        -: 1142:    const char* op,
+        -: 1143:    int expression_type)
+        -: 1144:{
+    #####: 1145:  int opcode = 0;
+        -: 1146:
+    #####: 1147:  switch(expression_type)
+        -: 1148:  {
+    #####: 1149:    case EXPRESSION_TYPE_INTEGER:
+    #####: 1150:      opcode = OP_INT_BEGIN;
+    #####: 1151:      break;
+    #####: 1152:    case EXPRESSION_TYPE_FLOAT:
+    #####: 1153:      opcode = OP_DBL_BEGIN;
+    #####: 1154:      break;
+    #####: 1155:    case EXPRESSION_TYPE_STRING:
+    #####: 1156:      opcode = OP_STR_BEGIN;
+    #####: 1157:      break;
+    #####: 1158:    default:
+    #####: 1159:      assert(false);
+        -: 1160:  }
+        -: 1161:
+    #####: 1162:  if (op[0] == '<')
+        -: 1163:  {
+    #####: 1164:    if (op[1] == '=')
+    #####: 1165:      opcode += _OP_LE;
+        -: 1166:    else
+    #####: 1167:      opcode += _OP_LT;
+        -: 1168:  }
+    #####: 1169:  else if (op[0] == '>')
+        -: 1170:  {
+    #####: 1171:    if (op[1] == '=')
+    #####: 1172:      opcode += _OP_GE;
+        -: 1173:    else
+    #####: 1174:      opcode += _OP_GT;
+        -: 1175:  }
+    #####: 1176:  else if (op[1] == '=')
+        -: 1177:  {
+    #####: 1178:    if (op[0] == '=')
+    #####: 1179:      opcode += _OP_EQ;
+        -: 1180:    else
+    #####: 1181:      opcode += _OP_NEQ;
+        -: 1182:  }
+    #####: 1183:  else if (op[0] == '+')
+        -: 1184:  {
+    #####: 1185:    opcode += _OP_ADD;
+        -: 1186:  }
+    #####: 1187:  else if (op[0] == '-')
+        -: 1188:  {
+    #####: 1189:    opcode += _OP_SUB;
+        -: 1190:  }
+    #####: 1191:  else if (op[0] == '*')
+        -: 1192:  {
+    #####: 1193:    opcode += _OP_MUL;
+        -: 1194:  }
+    #####: 1195:  else if (op[0] == '\\')
+        -: 1196:  {
+    #####: 1197:    opcode += _OP_DIV;
+        -: 1198:  }
+        -: 1199:
+    #####: 1200:  if (IS_INT_OP(opcode) || IS_DBL_OP(opcode) || IS_STR_OP(opcode))
+        -: 1201:  {
+    #####: 1202:    return opcode;
+        -: 1203:  }
+        -: 1204:
+    #####: 1205:  return OP_ERROR;
+        -: 1206:}
+        -: 1207:
+        -: 1208:
+    #####: 1209:int yr_parser_reduce_operation(
+        -: 1210:    yyscan_t yyscanner,
+        -: 1211:    const char* op,
+        -: 1212:    EXPRESSION left_operand,
+        -: 1213:    EXPRESSION right_operand)
+        -: 1214:{
+        -: 1215:  int expression_type;
+        -: 1216:
+    #####: 1217:  YR_COMPILER* compiler = yyget_extra(yyscanner);
+        -: 1218:
+    #####: 1219:  if ((left_operand.type == EXPRESSION_TYPE_INTEGER ||
+    #####: 1220:       left_operand.type == EXPRESSION_TYPE_FLOAT) &&
+    #####: 1221:      (right_operand.type == EXPRESSION_TYPE_INTEGER ||
+    #####: 1222:       right_operand.type == EXPRESSION_TYPE_FLOAT))
+        -: 1223:  {
+    #####: 1224:    if (left_operand.type != right_operand.type)
+        -: 1225:    {
+        -: 1226:      // One operand is double and the other is integer,
+        -: 1227:      // cast the integer to double
+        -: 1228:
+    #####: 1229:      FAIL_ON_ERROR(yr_parser_emit_with_arg(
+        -: 1230:          yyscanner,
+        -: 1231:          OP_INT_TO_DBL,
+        -: 1232:          (left_operand.type == EXPRESSION_TYPE_INTEGER) ? 2 : 1,
+        -: 1233:          NULL,
+        -: 1234:          NULL));
+        -: 1235:    }
+        -: 1236:
+    #####: 1237:    expression_type = EXPRESSION_TYPE_FLOAT;
+        -: 1238:
+    #####: 1239:    if (left_operand.type == EXPRESSION_TYPE_INTEGER &&
+    #####: 1240:        right_operand.type == EXPRESSION_TYPE_INTEGER)
+        -: 1241:    {
+    #####: 1242:      expression_type = EXPRESSION_TYPE_INTEGER;
+        -: 1243:    }
+        -: 1244:
+    #####: 1245:    FAIL_ON_ERROR(yr_parser_emit(
+        -: 1246:        yyscanner,
+        -: 1247:        _yr_parser_operator_to_opcode(op, expression_type),
+        -: 1248:        NULL));
+        -: 1249:  }
+    #####: 1250:  else if (left_operand.type == EXPRESSION_TYPE_STRING &&
+    #####: 1251:           right_operand.type == EXPRESSION_TYPE_STRING)
+    #####: 1252:  {
+    #####: 1253:    int opcode = _yr_parser_operator_to_opcode(op, EXPRESSION_TYPE_STRING);
+        -: 1254:
+    #####: 1255:    if (opcode != OP_ERROR)
+        -: 1256:    {
+    #####: 1257:      FAIL_ON_ERROR(yr_parser_emit(
+        -: 1258:          yyscanner,
+        -: 1259:          opcode,
+        -: 1260:          NULL));
+        -: 1261:    }
+        -: 1262:    else
+        -: 1263:    {
+    #####: 1264:      yr_compiler_set_error_extra_info_fmt(
+        -: 1265:          compiler, "strings don't support \"%s\" operation", op);
+        -: 1266:
+    #####: 1267:      return ERROR_WRONG_TYPE;
+        -: 1268:    }
+        -: 1269:  }
+        -: 1270:  else
+        -: 1271:  {
+    #####: 1272:    yr_compiler_set_error_extra_info(compiler, "type mismatch");
+        -: 1273:
+    #####: 1274:    return ERROR_WRONG_TYPE;
+        -: 1275:  }
+        -: 1276:
+    #####: 1277:  return ERROR_SUCCESS;
+        -: 1278:}

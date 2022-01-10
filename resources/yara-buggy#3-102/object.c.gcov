@@ -1,0 +1,1222 @@
+        -:    0:Source:object.c
+        -:    0:Graph:/home/workspace/libyara/object.gcno
+        -:    0:Data:/home/workspace/libyara/object.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2014. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:
+        -:   31:#include <assert.h>
+        -:   32:#include <ctype.h>
+        -:   33:#include <stdarg.h>
+        -:   34:#include <stdio.h>
+        -:   35:#include <stdlib.h>
+        -:   36:#include <string.h>
+        -:   37:#include <math.h>
+        -:   38:
+        -:   39:#include <yara/globals.h>
+        -:   40:#include <yara/mem.h>
+        -:   41:#include <yara/error.h>
+        -:   42:#include <yara/object.h>
+        -:   43:#include <yara/exec.h>
+        -:   44:#include <yara/utils.h>
+        -:   45:
+        -:   46:
+    #####:   47:int yr_object_create(
+        -:   48:    int8_t type,
+        -:   49:    const char* identifier,
+        -:   50:    YR_OBJECT* parent,
+        -:   51:    YR_OBJECT** object)
+        -:   52:{
+        -:   53:  YR_OBJECT* obj;
+        -:   54:  int i;
+    #####:   55:  size_t object_size = 0;
+        -:   56:
+    #####:   57:  assert(parent != NULL || object != NULL);
+        -:   58:
+    #####:   59:  switch (type)
+        -:   60:  {
+    #####:   61:    case OBJECT_TYPE_STRUCTURE:
+    #####:   62:      object_size = sizeof(YR_OBJECT_STRUCTURE);
+    #####:   63:      break;
+    #####:   64:    case OBJECT_TYPE_ARRAY:
+    #####:   65:      object_size = sizeof(YR_OBJECT_ARRAY);
+    #####:   66:      break;
+    #####:   67:    case OBJECT_TYPE_DICTIONARY:
+    #####:   68:      object_size = sizeof(YR_OBJECT_DICTIONARY);
+    #####:   69:      break;
+    #####:   70:    case OBJECT_TYPE_INTEGER:
+    #####:   71:      object_size = sizeof(YR_OBJECT);
+    #####:   72:      break;
+    #####:   73:    case OBJECT_TYPE_FLOAT:
+    #####:   74:      object_size = sizeof(YR_OBJECT);
+    #####:   75:      break;
+    #####:   76:    case OBJECT_TYPE_STRING:
+    #####:   77:      object_size = sizeof(YR_OBJECT);
+    #####:   78:      break;
+    #####:   79:    case OBJECT_TYPE_FUNCTION:
+    #####:   80:      object_size = sizeof(YR_OBJECT_FUNCTION);
+    #####:   81:      break;
+    #####:   82:    default:
+    #####:   83:      assert(false);
+        -:   84:  }
+        -:   85:
+    #####:   86:  obj = (YR_OBJECT*) yr_malloc(object_size);
+        -:   87:
+    #####:   88:  if (obj == NULL)
+    #####:   89:    return ERROR_INSUFFICIENT_MEMORY;
+        -:   90:
+    #####:   91:  obj->canary = yr_canary;
+    #####:   92:  obj->type = type;
+    #####:   93:  obj->identifier = yr_strdup(identifier);
+    #####:   94:  obj->parent = parent;
+    #####:   95:  obj->data = NULL;
+        -:   96:
+    #####:   97:  switch(type)
+        -:   98:  {
+    #####:   99:    case OBJECT_TYPE_INTEGER:
+    #####:  100:      obj->value.i = UNDEFINED;
+    #####:  101:      break;
+    #####:  102:    case OBJECT_TYPE_FLOAT:
+    #####:  103:      obj->value.d = NAN;
+    #####:  104:      break;
+    #####:  105:    case OBJECT_TYPE_STRING:
+    #####:  106:      obj->value.ss = NULL;
+    #####:  107:      break;
+    #####:  108:    case OBJECT_TYPE_STRUCTURE:
+    #####:  109:      object_as_structure(obj)->members = NULL;
+    #####:  110:      break;
+    #####:  111:    case OBJECT_TYPE_ARRAY:
+    #####:  112:      object_as_array(obj)->items = NULL;
+    #####:  113:      object_as_array(obj)->prototype_item = NULL;
+    #####:  114:      break;
+    #####:  115:    case OBJECT_TYPE_DICTIONARY:
+    #####:  116:      object_as_dictionary(obj)->items = NULL;
+    #####:  117:      object_as_dictionary(obj)->prototype_item = NULL;
+    #####:  118:      break;
+    #####:  119:    case OBJECT_TYPE_FUNCTION:
+    #####:  120:      object_as_function(obj)->return_obj = NULL;
+    #####:  121:      for (i = 0; i < YR_MAX_OVERLOADED_FUNCTIONS; i++)
+        -:  122:      {
+    #####:  123:        object_as_function(obj)->prototypes[i].arguments_fmt = NULL;
+    #####:  124:        object_as_function(obj)->prototypes[i].code = NULL;
+        -:  125:      }
+    #####:  126:      break;
+        -:  127:  }
+        -:  128:
+    #####:  129:  if (obj->identifier == NULL)
+        -:  130:  {
+    #####:  131:    yr_free(obj);
+    #####:  132:    return ERROR_INSUFFICIENT_MEMORY;
+        -:  133:  }
+        -:  134:
+    #####:  135:  if (parent != NULL)
+        -:  136:  {
+    #####:  137:    assert(parent->type == OBJECT_TYPE_STRUCTURE ||
+        -:  138:           parent->type == OBJECT_TYPE_ARRAY ||
+        -:  139:           parent->type == OBJECT_TYPE_DICTIONARY ||
+        -:  140:           parent->type == OBJECT_TYPE_FUNCTION);
+        -:  141:
+    #####:  142:    switch(parent->type)
+        -:  143:    {
+    #####:  144:      case OBJECT_TYPE_STRUCTURE:
+    #####:  145:        FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  146:            yr_object_structure_set_member(parent, obj),
+        -:  147:            {
+        -:  148:              yr_free((void*) obj->identifier);
+        -:  149:              yr_free(obj);
+        -:  150:            });
+    #####:  151:        break;
+        -:  152:
+    #####:  153:      case OBJECT_TYPE_ARRAY:
+    #####:  154:        object_as_array(parent)->prototype_item = obj;
+    #####:  155:        break;
+        -:  156:
+    #####:  157:      case OBJECT_TYPE_DICTIONARY:
+    #####:  158:        object_as_dictionary(parent)->prototype_item = obj;
+    #####:  159:        break;
+        -:  160:
+    #####:  161:      case OBJECT_TYPE_FUNCTION:
+    #####:  162:        object_as_function(parent)->return_obj = obj;
+    #####:  163:        break;
+        -:  164:    }
+        -:  165:  }
+        -:  166:
+    #####:  167:  if (object != NULL)
+    #####:  168:    *object = obj;
+        -:  169:
+    #####:  170:  return ERROR_SUCCESS;
+        -:  171:}
+        -:  172:
+        -:  173:
+    #####:  174:int yr_object_function_create(
+        -:  175:    const char* identifier,
+        -:  176:    const char* arguments_fmt,
+        -:  177:    const char* return_fmt,
+        -:  178:    YR_MODULE_FUNC code,
+        -:  179:    YR_OBJECT* parent,
+        -:  180:    YR_OBJECT** function)
+        -:  181:{
+        -:  182:  YR_OBJECT* return_obj;
+    #####:  183:  YR_OBJECT* o = NULL;
+    #####:  184:  YR_OBJECT_FUNCTION* f = NULL;
+        -:  185:
+        -:  186:  int8_t return_type;
+        -:  187:  int i;
+        -:  188:
+    #####:  189:  switch (*return_fmt)
+        -:  190:  {
+    #####:  191:    case 'i':
+    #####:  192:      return_type = OBJECT_TYPE_INTEGER;
+    #####:  193:      break;
+    #####:  194:    case 's':
+    #####:  195:      return_type = OBJECT_TYPE_STRING;
+    #####:  196:      break;
+    #####:  197:    case 'f':
+    #####:  198:      return_type = OBJECT_TYPE_FLOAT;
+    #####:  199:      break;
+    #####:  200:    default:
+    #####:  201:      return ERROR_INVALID_FORMAT;
+        -:  202:  }
+        -:  203:
+    #####:  204:  if (parent != NULL)
+        -:  205:  {
+        -:  206:    // The parent of a function must be a structure.
+        -:  207:
+    #####:  208:    assert(parent->type == OBJECT_TYPE_STRUCTURE);
+        -:  209:
+        -:  210:    // Try to find if the structure already has a function
+        -:  211:    // with that name. In that case this is a function overload.
+        -:  212:
+    #####:  213:    f = object_as_function(yr_object_lookup_field(parent, identifier));
+        -:  214:
+        -:  215:    // Overloaded functions must have the same return type.
+        -:  216:
+    #####:  217:    if (f != NULL && return_type != f->return_obj->type)
+    #####:  218:      return ERROR_WRONG_RETURN_TYPE;
+        -:  219:  }
+        -:  220:
+    #####:  221:  if (f == NULL) // Function doesn't exist yet
+        -:  222:  {
+    #####:  223:    FAIL_ON_ERROR(
+        -:  224:        yr_object_create(
+        -:  225:            OBJECT_TYPE_FUNCTION,
+        -:  226:            identifier,
+        -:  227:            parent,
+        -:  228:            &o));
+        -:  229:
+    #####:  230:    FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  231:        yr_object_create(
+        -:  232:            return_type,
+        -:  233:            "result",
+        -:  234:            o,
+        -:  235:            &return_obj),
+        -:  236:        yr_object_destroy(o));
+        -:  237:
+    #####:  238:    f = object_as_function(o);
+        -:  239:  }
+        -:  240:
+    #####:  241:  for (i = 0; i < YR_MAX_OVERLOADED_FUNCTIONS; i++)
+        -:  242:  {
+    #####:  243:    if (f->prototypes[i].arguments_fmt == NULL)
+        -:  244:    {
+    #####:  245:      f->prototypes[i].arguments_fmt = arguments_fmt;
+    #####:  246:      f->prototypes[i].code = code;
+        -:  247:
+    #####:  248:      break;
+        -:  249:    }
+        -:  250:  }
+        -:  251:
+    #####:  252:  if (function != NULL)
+    #####:  253:    *function = (YR_OBJECT*) f;
+        -:  254:
+    #####:  255:  return ERROR_SUCCESS;
+        -:  256:}
+        -:  257:
+        -:  258:
+    #####:  259:int yr_object_from_external_variable(
+        -:  260:    YR_EXTERNAL_VARIABLE* external,
+        -:  261:    YR_OBJECT** object)
+        -:  262:{
+        -:  263:  YR_OBJECT* obj;
+        -:  264:  int result;
+    #####:  265:  uint8_t obj_type = 0;
+        -:  266:
+    #####:  267:  switch(external->type)
+        -:  268:  {
+    #####:  269:    case EXTERNAL_VARIABLE_TYPE_INTEGER:
+        -:  270:    case EXTERNAL_VARIABLE_TYPE_BOOLEAN:
+    #####:  271:      obj_type = OBJECT_TYPE_INTEGER;
+    #####:  272:      break;
+        -:  273:
+    #####:  274:    case EXTERNAL_VARIABLE_TYPE_FLOAT:
+    #####:  275:      obj_type = OBJECT_TYPE_FLOAT;
+    #####:  276:      break;
+        -:  277:
+    #####:  278:    case EXTERNAL_VARIABLE_TYPE_STRING:
+        -:  279:    case EXTERNAL_VARIABLE_TYPE_MALLOC_STRING:
+    #####:  280:      obj_type = OBJECT_TYPE_STRING;
+    #####:  281:      break;
+        -:  282:
+    #####:  283:    default:
+    #####:  284:      assert(false);
+        -:  285:  }
+        -:  286:
+    #####:  287:  result = yr_object_create(
+        -:  288:      obj_type,
+        -:  289:      external->identifier,
+        -:  290:      NULL,
+        -:  291:      &obj);
+        -:  292:
+    #####:  293:  if (result == ERROR_SUCCESS)
+        -:  294:  {
+    #####:  295:    switch(external->type)
+        -:  296:    {
+    #####:  297:      case EXTERNAL_VARIABLE_TYPE_INTEGER:
+        -:  298:      case EXTERNAL_VARIABLE_TYPE_BOOLEAN:
+    #####:  299:        result = yr_object_set_integer(external->value.i, obj, NULL);
+    #####:  300:        break;
+        -:  301:
+    #####:  302:      case EXTERNAL_VARIABLE_TYPE_FLOAT:
+    #####:  303:        result = yr_object_set_float(external->value.f, obj, NULL);
+    #####:  304:        break;
+        -:  305:
+    #####:  306:      case EXTERNAL_VARIABLE_TYPE_STRING:
+        -:  307:      case EXTERNAL_VARIABLE_TYPE_MALLOC_STRING:
+    #####:  308:        result = yr_object_set_string(
+    #####:  309:            external->value.s, strlen(external->value.s), obj, NULL);
+    #####:  310:        break;
+        -:  311:    }
+        -:  312:
+    #####:  313:    *object = obj;
+        -:  314:  }
+        -:  315:
+    #####:  316:  return result;
+        -:  317:}
+        -:  318:
+        -:  319:
+    #####:  320:void yr_object_destroy(
+        -:  321:    YR_OBJECT* object)
+        -:  322:{
+        -:  323:  YR_STRUCTURE_MEMBER* member;
+        -:  324:  YR_STRUCTURE_MEMBER* next_member;
+        -:  325:  YR_ARRAY_ITEMS* array_items;
+        -:  326:  YR_DICTIONARY_ITEMS* dict_items;
+        -:  327:
+        -:  328:  int i;
+        -:  329:
+    #####:  330:  if (object == NULL)
+    #####:  331:    return;
+        -:  332:
+    #####:  333:  switch(object->type)
+        -:  334:  {
+    #####:  335:    case OBJECT_TYPE_STRUCTURE:
+    #####:  336:      member = object_as_structure(object)->members;
+        -:  337:
+    #####:  338:      while (member != NULL)
+        -:  339:      {
+    #####:  340:        next_member = member->next;
+    #####:  341:        yr_object_destroy(member->object);
+    #####:  342:        yr_free(member);
+    #####:  343:        member = next_member;
+        -:  344:      }
+    #####:  345:      break;
+        -:  346:
+    #####:  347:    case OBJECT_TYPE_STRING:
+    #####:  348:      if (object->value.ss != NULL)
+    #####:  349:        yr_free(object->value.ss);
+    #####:  350:      break;
+        -:  351:
+    #####:  352:    case OBJECT_TYPE_ARRAY:
+    #####:  353:      if (object_as_array(object)->prototype_item != NULL)
+    #####:  354:        yr_object_destroy(object_as_array(object)->prototype_item);
+        -:  355:
+    #####:  356:      array_items = object_as_array(object)->items;
+        -:  357:
+    #####:  358:      if (array_items != NULL)
+        -:  359:      {
+    #####:  360:        for (i = 0; i < array_items->count; i++)
+    #####:  361:          if (array_items->objects[i] != NULL)
+    #####:  362:            yr_object_destroy(array_items->objects[i]);
+        -:  363:      }
+        -:  364:
+    #####:  365:      yr_free(array_items);
+    #####:  366:      break;
+        -:  367:
+    #####:  368:    case OBJECT_TYPE_DICTIONARY:
+    #####:  369:      if (object_as_dictionary(object)->prototype_item != NULL)
+    #####:  370:        yr_object_destroy(object_as_dictionary(object)->prototype_item);
+        -:  371:
+    #####:  372:      dict_items = object_as_dictionary(object)->items;
+        -:  373:
+    #####:  374:      if (dict_items != NULL)
+        -:  375:      {
+    #####:  376:        for (i = 0; i < dict_items->used; i++)
+        -:  377:        {
+    #####:  378:          if (dict_items->objects[i].key != NULL)
+    #####:  379:            yr_free(dict_items->objects[i].key);
+        -:  380:
+    #####:  381:          if (dict_items->objects[i].obj != NULL)
+    #####:  382:            yr_object_destroy(dict_items->objects[i].obj);
+        -:  383:        }
+        -:  384:      }
+        -:  385:
+    #####:  386:      yr_free(dict_items);
+    #####:  387:      break;
+        -:  388:
+    #####:  389:    case OBJECT_TYPE_FUNCTION:
+    #####:  390:      yr_object_destroy(object_as_function(object)->return_obj);
+    #####:  391:      break;
+        -:  392:  }
+        -:  393:
+    #####:  394:  yr_free((void*) object->identifier);
+    #####:  395:  yr_free(object);
+        -:  396:}
+        -:  397:
+        -:  398:
+    #####:  399:YR_OBJECT* yr_object_lookup_field(
+        -:  400:    YR_OBJECT* object,
+        -:  401:    const char* field_name)
+        -:  402:{
+        -:  403:  YR_STRUCTURE_MEMBER* member;
+        -:  404:
+    #####:  405:  assert(object != NULL);
+    #####:  406:  assert(object->type == OBJECT_TYPE_STRUCTURE);
+        -:  407:
+    #####:  408:  member = object_as_structure(object)->members;
+        -:  409:
+    #####:  410:  while (member != NULL)
+        -:  411:  {
+    #####:  412:    if (strcmp(member->object->identifier, field_name) == 0)
+    #####:  413:      return member->object;
+        -:  414:
+    #####:  415:    member = member->next;
+        -:  416:  }
+        -:  417:
+    #####:  418:  return NULL;
+        -:  419:}
+        -:  420:
+        -:  421:
+    #####:  422:static YR_OBJECT* _yr_object_lookup(
+        -:  423:    YR_OBJECT* object,
+        -:  424:    int flags,
+        -:  425:    const char* pattern,
+        -:  426:    va_list args)
+        -:  427:{
+    #####:  428:  YR_OBJECT* obj = object;
+        -:  429:
+    #####:  430:  const char* p = pattern;
+    #####:  431:  const char* key = NULL;
+        -:  432:
+        -:  433:  char str[256];
+        -:  434:
+        -:  435:  int i;
+    #####:  436:  int index = -1;
+        -:  437:
+    #####:  438:  while (obj != NULL)
+        -:  439:  {
+    #####:  440:    i = 0;
+        -:  441:
+    #####:  442:    while (*p != '\0' && *p != '.' && *p != '[' && i < sizeof(str) - 1)
+        -:  443:    {
+    #####:  444:      str[i++] = *p++;
+        -:  445:    }
+        -:  446:
+    #####:  447:    str[i] = '\0';
+        -:  448:
+    #####:  449:    if (obj->type != OBJECT_TYPE_STRUCTURE)
+    #####:  450:      return NULL;
+        -:  451:
+    #####:  452:    obj = yr_object_lookup_field(obj, str);
+        -:  453:
+    #####:  454:    if (obj == NULL)
+    #####:  455:      return NULL;
+        -:  456:
+    #####:  457:    if (*p == '[')
+        -:  458:    {
+    #####:  459:      p++;
+        -:  460:
+    #####:  461:      if (*p == '%')
+        -:  462:      {
+    #####:  463:        p++;
+        -:  464:
+    #####:  465:        switch(*p++)
+        -:  466:        {
+    #####:  467:          case 'i':
+    #####:  468:            index = va_arg(args, int);
+    #####:  469:            break;
+    #####:  470:          case 's':
+    #####:  471:            key = va_arg(args, const char*);
+    #####:  472:            break;
+        -:  473:
+    #####:  474:          default:
+    #####:  475:            return NULL;
+        -:  476:        }
+        -:  477:      }
+    #####:  478:      else if (*p >= '0' && *p <= '9')
+        -:  479:      {
+    #####:  480:        index = (int) strtol(p, (char**) &p, 10);
+        -:  481:      }
+    #####:  482:      else if (*p == '"')
+        -:  483:      {
+    #####:  484:        i = 0;
+    #####:  485:        p++;              // skip the opening quotation mark
+        -:  486:
+    #####:  487:        while (*p != '"' && *p != '\0' && i < sizeof(str) - 1)
+    #####:  488:          str[i++] = *p++;
+        -:  489:
+    #####:  490:        str[i] = '\0';
+    #####:  491:        p++;              // skip the closing quotation mark
+    #####:  492:        key = str;
+        -:  493:      }
+        -:  494:      else
+        -:  495:      {
+    #####:  496:        return NULL;
+        -:  497:      }
+        -:  498:
+    #####:  499:      assert(*p == ']');
+    #####:  500:      p++;
+    #####:  501:      assert(*p == '.' || *p == '\0');
+        -:  502:
+    #####:  503:      switch(obj->type)
+        -:  504:      {
+    #####:  505:        case OBJECT_TYPE_ARRAY:
+    #####:  506:          assert(index != -1);
+    #####:  507:          obj = yr_object_array_get_item(obj, flags, index);
+    #####:  508:          break;
+        -:  509:
+    #####:  510:        case OBJECT_TYPE_DICTIONARY:
+    #####:  511:          assert(key != NULL);
+    #####:  512:          obj = yr_object_dict_get_item(obj, flags, key);
+    #####:  513:          break;
+        -:  514:      }
+        -:  515:    }
+        -:  516:
+    #####:  517:    if (*p == '\0')
+    #####:  518:      break;
+        -:  519:
+    #####:  520:    p++;
+        -:  521:  }
+        -:  522:
+    #####:  523:  return obj;
+        -:  524:}
+        -:  525:
+        -:  526:
+    #####:  527:YR_OBJECT* yr_object_lookup(
+        -:  528:    YR_OBJECT* object,
+        -:  529:    int flags,
+        -:  530:    const char* pattern,
+        -:  531:    ...)
+        -:  532:{
+        -:  533:  YR_OBJECT* result;
+        -:  534:
+        -:  535:  va_list args;
+    #####:  536:  va_start(args, pattern);
+        -:  537:
+    #####:  538:  result = _yr_object_lookup(object, flags, pattern, args);
+        -:  539:
+    #####:  540:  va_end(args);
+        -:  541:
+    #####:  542:  return result;
+        -:  543:
+        -:  544:}
+        -:  545:
+        -:  546:
+    #####:  547:int yr_object_copy(
+        -:  548:    YR_OBJECT* object,
+        -:  549:    YR_OBJECT** object_copy)
+        -:  550:{
+        -:  551:  YR_OBJECT* copy;
+        -:  552:  YR_OBJECT* o;
+        -:  553:
+        -:  554:  YR_STRUCTURE_MEMBER* structure_member;
+        -:  555:
+        -:  556:  int i;
+        -:  557:
+    #####:  558:  *object_copy = NULL;
+        -:  559:
+    #####:  560:  FAIL_ON_ERROR(yr_object_create(
+        -:  561:      object->type,
+        -:  562:      object->identifier,
+        -:  563:      NULL,
+        -:  564:      &copy));
+        -:  565:
+    #####:  566:  switch(object->type)
+        -:  567:  {
+    #####:  568:    case OBJECT_TYPE_INTEGER:
+    #####:  569:      copy->value.i = object->value.i;
+    #####:  570:      break;
+        -:  571:
+    #####:  572:    case OBJECT_TYPE_FLOAT:
+    #####:  573:      copy->value.d = object->value.d;
+    #####:  574:      break;
+        -:  575:
+    #####:  576:    case OBJECT_TYPE_STRING:
+        -:  577:
+    #####:  578:      if (object->value.ss != NULL)
+    #####:  579:        copy->value.ss = sized_string_dup(object->value.ss);
+        -:  580:      else
+    #####:  581:        copy->value.ss = NULL;
+        -:  582:
+    #####:  583:      break;
+        -:  584:
+    #####:  585:    case OBJECT_TYPE_FUNCTION:
+        -:  586:
+    #####:  587:      FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  588:          yr_object_copy(
+        -:  589:              object_as_function(object)->return_obj,
+        -:  590:              &object_as_function(copy)->return_obj),
+        -:  591:          yr_object_destroy(copy));
+        -:  592:
+    #####:  593:      for (i = 0; i < YR_MAX_OVERLOADED_FUNCTIONS; i++)
+    #####:  594:        object_as_function(copy)->prototypes[i] = \
+        -:  595:            object_as_function(object)->prototypes[i];
+        -:  596:
+    #####:  597:      break;
+        -:  598:
+    #####:  599:    case OBJECT_TYPE_STRUCTURE:
+        -:  600:
+    #####:  601:      structure_member = object_as_structure(object)->members;
+        -:  602:
+    #####:  603:      while (structure_member != NULL)
+        -:  604:      {
+    #####:  605:        FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  606:            yr_object_copy(structure_member->object, &o),
+        -:  607:            yr_object_destroy(copy));
+        -:  608:
+    #####:  609:        FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  610:            yr_object_structure_set_member(copy, o),
+        -:  611:            yr_free(o);
+        -:  612:            yr_object_destroy(copy));
+        -:  613:
+    #####:  614:        structure_member = structure_member->next;
+        -:  615:      }
+        -:  616:
+    #####:  617:      break;
+        -:  618:
+    #####:  619:    case OBJECT_TYPE_ARRAY:
+        -:  620:
+    #####:  621:      FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  622:          yr_object_copy(object_as_array(object)->prototype_item, &o),
+        -:  623:          yr_object_destroy(copy));
+        -:  624:
+    #####:  625:      object_as_array(copy)->prototype_item = o;
+        -:  626:
+    #####:  627:      break;
+        -:  628:
+    #####:  629:    case OBJECT_TYPE_DICTIONARY:
+        -:  630:
+    #####:  631:      FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  632:          yr_object_copy(object_as_dictionary(object)->prototype_item, &o),
+        -:  633:          yr_object_destroy(copy));
+        -:  634:
+    #####:  635:      object_as_dictionary(copy)->prototype_item = o;
+        -:  636:
+    #####:  637:      break;
+        -:  638:
+    #####:  639:    default:
+    #####:  640:      assert(false);
+        -:  641:
+        -:  642:  }
+        -:  643:
+    #####:  644:  *object_copy = copy;
+        -:  645:
+    #####:  646:  return ERROR_SUCCESS;
+        -:  647:}
+        -:  648:
+        -:  649:
+    #####:  650:int yr_object_structure_set_member(
+        -:  651:    YR_OBJECT* object,
+        -:  652:    YR_OBJECT* member)
+        -:  653:{
+        -:  654:  YR_STRUCTURE_MEMBER* sm;
+        -:  655:
+    #####:  656:  assert(object->type == OBJECT_TYPE_STRUCTURE);
+        -:  657:
+        -:  658:  // Check if the object already have a member with the same identifier
+        -:  659:
+    #####:  660:  if (yr_object_lookup_field(object,  member->identifier) != NULL)
+    #####:  661:    return ERROR_DUPLICATED_STRUCTURE_MEMBER;
+        -:  662:
+    #####:  663:  sm = (YR_STRUCTURE_MEMBER*) yr_malloc(sizeof(YR_STRUCTURE_MEMBER));
+        -:  664:
+    #####:  665:  if (sm == NULL)
+    #####:  666:    return ERROR_INSUFFICIENT_MEMORY;
+        -:  667:
+    #####:  668:  member->parent = object;
+    #####:  669:  sm->object = member;
+    #####:  670:  sm->next = object_as_structure(object)->members;
+        -:  671:
+    #####:  672:  object_as_structure(object)->members = sm;
+        -:  673:
+    #####:  674:  return ERROR_SUCCESS;
+        -:  675:}
+        -:  676:
+        -:  677:
+    #####:  678:YR_OBJECT* yr_object_array_get_item(
+        -:  679:    YR_OBJECT* object,
+        -:  680:    int flags,
+        -:  681:    int index)
+        -:  682:{
+    #####:  683:  YR_OBJECT* result = NULL;
+        -:  684:  YR_OBJECT_ARRAY* array;
+        -:  685:
+    #####:  686:  assert(object->type == OBJECT_TYPE_ARRAY);
+        -:  687:
+    #####:  688:  if (index < 0)
+    #####:  689:    return NULL;
+        -:  690:
+    #####:  691:  array = object_as_array(object);
+        -:  692:
+    #####:  693:  if (array->items != NULL && array->items->count > index)
+    #####:  694:      result = array->items->objects[index];
+        -:  695:
+    #####:  696:  if (result == NULL && flags & OBJECT_CREATE)
+        -:  697:  {
+    #####:  698:    yr_object_copy(array->prototype_item, &result);
+        -:  699:
+    #####:  700:    if (result != NULL)
+    #####:  701:      yr_object_array_set_item(object, result, index);
+        -:  702:  }
+        -:  703:
+    #####:  704:  return result;
+        -:  705:}
+        -:  706:
+        -:  707:
+    #####:  708:int yr_object_array_set_item(
+        -:  709:    YR_OBJECT* object,
+        -:  710:    YR_OBJECT* item,
+        -:  711:    int index)
+        -:  712:{
+        -:  713:  YR_OBJECT_ARRAY* array;
+        -:  714:
+        -:  715:  int i;
+        -:  716:  int count;
+        -:  717:
+    #####:  718:  assert(index >= 0);
+    #####:  719:  assert(object->type == OBJECT_TYPE_ARRAY);
+        -:  720:
+    #####:  721:  array = object_as_array(object);
+        -:  722:
+    #####:  723:  if (array->items == NULL)
+        -:  724:  {
+    #####:  725:    count = 64;
+        -:  726:
+    #####:  727:    while (count <= index)
+    #####:  728:      count *= 2;
+        -:  729:
+    #####:  730:    array->items = (YR_ARRAY_ITEMS*) yr_malloc(
+        -:  731:        sizeof(YR_ARRAY_ITEMS) + count * sizeof(YR_OBJECT*));
+        -:  732:
+    #####:  733:    if (array->items == NULL)
+    #####:  734:      return ERROR_INSUFFICIENT_MEMORY;
+        -:  735:
+    #####:  736:    memset(array->items->objects, 0, count * sizeof(YR_OBJECT*));
+        -:  737:
+    #####:  738:    array->items->count = count;
+        -:  739:  }
+    #####:  740:  else if (index >= array->items->count)
+        -:  741:  {
+    #####:  742:    count = array->items->count * 2;
+        -:  743:
+    #####:  744:    while (count <= index)
+    #####:  745:      count *= 2;
+        -:  746:
+    #####:  747:    array->items = (YR_ARRAY_ITEMS*) yr_realloc(
+    #####:  748:        array->items,
+        -:  749:        sizeof(YR_ARRAY_ITEMS) + count * sizeof(YR_OBJECT*));
+        -:  750:
+    #####:  751:    if (array->items == NULL)
+    #####:  752:      return ERROR_INSUFFICIENT_MEMORY;
+        -:  753:
+    #####:  754:    for (i = array->items->count; i < count; i++)
+    #####:  755:      array->items->objects[i] = NULL;
+        -:  756:
+    #####:  757:    array->items->count = count;
+        -:  758:  }
+        -:  759:
+    #####:  760:  item->parent = object;
+    #####:  761:  array->items->objects[index] = item;
+        -:  762:
+    #####:  763:  return ERROR_SUCCESS;
+        -:  764:}
+        -:  765:
+        -:  766:
+    #####:  767:YR_OBJECT* yr_object_dict_get_item(
+        -:  768:    YR_OBJECT* object,
+        -:  769:    int flags,
+        -:  770:    const char* key)
+        -:  771:{
+        -:  772:  int i;
+        -:  773:
+    #####:  774:  YR_OBJECT* result = NULL;
+        -:  775:  YR_OBJECT_DICTIONARY* dict;
+        -:  776:
+    #####:  777:  assert(object->type == OBJECT_TYPE_DICTIONARY);
+        -:  778:
+    #####:  779:  dict = object_as_dictionary(object);
+        -:  780:
+    #####:  781:  if (dict->items != NULL)
+        -:  782:  {
+    #####:  783:    for (i = 0; i < dict->items->used; i++)
+        -:  784:    {
+    #####:  785:      if (strcmp(dict->items->objects[i].key, key) == 0)
+    #####:  786:        result = dict->items->objects[i].obj;
+        -:  787:    }
+        -:  788:  }
+        -:  789:
+    #####:  790:  if (result == NULL && flags & OBJECT_CREATE)
+        -:  791:  {
+    #####:  792:    yr_object_copy(dict->prototype_item, &result);
+        -:  793:
+    #####:  794:    if (result != NULL)
+    #####:  795:      yr_object_dict_set_item(object, result, key);
+        -:  796:  }
+        -:  797:
+    #####:  798:  return result;
+        -:  799:}
+        -:  800:
+        -:  801:
+    #####:  802:int yr_object_dict_set_item(
+        -:  803:    YR_OBJECT* object,
+        -:  804:    YR_OBJECT* item,
+        -:  805:    const char* key)
+        -:  806:{
+        -:  807:  YR_OBJECT_DICTIONARY* dict;
+        -:  808:
+        -:  809:  int i;
+        -:  810:  int count;
+        -:  811:
+    #####:  812:  assert(object->type == OBJECT_TYPE_DICTIONARY);
+        -:  813:
+    #####:  814:  dict = object_as_dictionary(object);
+        -:  815:
+    #####:  816:  if (dict->items == NULL)
+        -:  817:  {
+    #####:  818:    count = 64;
+        -:  819:
+    #####:  820:    dict->items = (YR_DICTIONARY_ITEMS*) yr_malloc(
+    #####:  821:        sizeof(YR_DICTIONARY_ITEMS) + count * sizeof(dict->items->objects[0]));
+        -:  822:
+    #####:  823:    if (dict->items == NULL)
+    #####:  824:      return ERROR_INSUFFICIENT_MEMORY;
+        -:  825:
+    #####:  826:    memset(dict->items->objects, 0, count * sizeof(dict->items->objects[0]));
+        -:  827:
+    #####:  828:    dict->items->free = count;
+    #####:  829:    dict->items->used = 0;
+        -:  830:  }
+    #####:  831:  else if (dict->items->free == 0)
+        -:  832:  {
+    #####:  833:    count = dict->items->used * 2;
+    #####:  834:    dict->items = (YR_DICTIONARY_ITEMS*) yr_realloc(
+    #####:  835:        dict->items,
+    #####:  836:        sizeof(YR_DICTIONARY_ITEMS) + count * sizeof(dict->items->objects[0]));
+        -:  837:
+    #####:  838:    if (dict->items == NULL)
+    #####:  839:      return ERROR_INSUFFICIENT_MEMORY;
+        -:  840:
+    #####:  841:    for (i = dict->items->used; i < count; i++)
+        -:  842:    {
+    #####:  843:      dict->items->objects[i].key = NULL;
+    #####:  844:      dict->items->objects[i].obj = NULL;
+        -:  845:    }
+        -:  846:
+    #####:  847:    dict->items->free = dict->items->used;
+        -:  848:  }
+        -:  849:
+    #####:  850:  item->parent = object;
+        -:  851:
+    #####:  852:  dict->items->objects[dict->items->used].key = yr_strdup(key);
+    #####:  853:  dict->items->objects[dict->items->used].obj = item;
+        -:  854:
+    #####:  855:  dict->items->used++;
+    #####:  856:  dict->items->free--;
+        -:  857:
+    #####:  858:  return ERROR_SUCCESS;
+        -:  859:}
+        -:  860:
+        -:  861:
+    #####:  862:bool yr_object_has_undefined_value(
+        -:  863:    YR_OBJECT* object,
+        -:  864:    const char* field,
+        -:  865:    ...)
+        -:  866:{
+        -:  867:  YR_OBJECT* field_obj;
+        -:  868:
+        -:  869:  va_list args;
+    #####:  870:  va_start(args, field);
+        -:  871:
+    #####:  872:  if (field != NULL)
+    #####:  873:    field_obj = _yr_object_lookup(object, 0, field, args);
+        -:  874:  else
+    #####:  875:    field_obj = object;
+        -:  876:
+    #####:  877:  va_end(args);
+        -:  878:
+    #####:  879:  if (field_obj == NULL)
+    #####:  880:    return true;
+        -:  881:
+    #####:  882:  switch(field_obj->type)
+        -:  883:  {
+    #####:  884:    case OBJECT_TYPE_FLOAT:
+    #####:  885:      return isnan(field_obj->value.d);
+    #####:  886:    case OBJECT_TYPE_STRING:
+    #####:  887:      return field_obj->value.ss == NULL;
+    #####:  888:    case OBJECT_TYPE_INTEGER:
+    #####:  889:      return field_obj->value.i == UNDEFINED;
+        -:  890:  }
+        -:  891:
+    #####:  892:  return false;
+        -:  893:}
+        -:  894:
+        -:  895:
+    #####:  896:int64_t yr_object_get_integer(
+        -:  897:    YR_OBJECT* object,
+        -:  898:    const char* field,
+        -:  899:    ...)
+        -:  900:{
+        -:  901:  YR_OBJECT* integer_obj;
+        -:  902:
+        -:  903:  va_list args;
+    #####:  904:  va_start(args, field);
+        -:  905:
+    #####:  906:  if (field != NULL)
+    #####:  907:    integer_obj = _yr_object_lookup(object, 0, field, args);
+        -:  908:  else
+    #####:  909:    integer_obj = object;
+        -:  910:
+    #####:  911:  va_end(args);
+        -:  912:
+    #####:  913:  if (integer_obj == NULL)
+    #####:  914:    return UNDEFINED;
+        -:  915:
+    #####:  916:  assertf(integer_obj->type == OBJECT_TYPE_INTEGER,
+        -:  917:          "type of \"%s\" is not integer\n", field);
+        -:  918:
+    #####:  919:  return integer_obj->value.i;
+        -:  920:}
+        -:  921:
+        -:  922:
+    #####:  923:double yr_object_get_float(
+        -:  924:    YR_OBJECT* object,
+        -:  925:    const char* field,
+        -:  926:    ...)
+        -:  927:{
+        -:  928:  YR_OBJECT* double_obj;
+        -:  929:
+        -:  930:  va_list args;
+    #####:  931:  va_start(args, field);
+        -:  932:
+    #####:  933:  if (field != NULL)
+    #####:  934:    double_obj = _yr_object_lookup(object, 0, field, args);
+        -:  935:  else
+    #####:  936:    double_obj = object;
+        -:  937:
+    #####:  938:  va_end(args);
+        -:  939:
+    #####:  940:  if (double_obj == NULL)
+    #####:  941:    return NAN;
+        -:  942:
+    #####:  943:  assertf(double_obj->type == OBJECT_TYPE_FLOAT,
+        -:  944:          "type of \"%s\" is not double\n", field);
+        -:  945:
+    #####:  946:  return double_obj->value.d;
+        -:  947:}
+        -:  948:
+        -:  949:
+    #####:  950:SIZED_STRING* yr_object_get_string(
+        -:  951:    YR_OBJECT* object,
+        -:  952:    const char* field,
+        -:  953:    ...)
+        -:  954:{
+        -:  955:  YR_OBJECT* string_obj;
+        -:  956:
+        -:  957:  va_list args;
+    #####:  958:  va_start(args, field);
+        -:  959:
+    #####:  960:  if (field != NULL)
+    #####:  961:    string_obj = _yr_object_lookup(object, 0, field, args);
+        -:  962:  else
+    #####:  963:    string_obj = object;
+        -:  964:
+    #####:  965:  va_end(args);
+        -:  966:
+    #####:  967:  if (string_obj == NULL)
+    #####:  968:    return NULL;
+        -:  969:
+    #####:  970:  assertf(string_obj->type == OBJECT_TYPE_STRING,
+        -:  971:          "type of \"%s\" is not string\n", field);
+        -:  972:
+    #####:  973:  return string_obj->value.ss;
+        -:  974:}
+        -:  975:
+        -:  976:
+    #####:  977:int yr_object_set_integer(
+        -:  978:    int64_t value,
+        -:  979:    YR_OBJECT* object,
+        -:  980:    const char* field,
+        -:  981:    ...)
+        -:  982:{
+        -:  983:  YR_OBJECT* integer_obj;
+        -:  984:
+        -:  985:  va_list args;
+    #####:  986:  va_start(args, field);
+        -:  987:
+    #####:  988:  if (field != NULL)
+    #####:  989:    integer_obj = _yr_object_lookup(object, OBJECT_CREATE, field, args);
+        -:  990:  else
+    #####:  991:    integer_obj = object;
+        -:  992:
+    #####:  993:  va_end(args);
+        -:  994:
+    #####:  995:  if (integer_obj == NULL)
+        -:  996:  {
+    #####:  997:    if (field != NULL)
+    #####:  998:      return ERROR_INSUFFICIENT_MEMORY;
+        -:  999:    else
+    #####: 1000:      return ERROR_INVALID_ARGUMENT;
+        -: 1001:  }
+        -: 1002:
+    #####: 1003:  assert(integer_obj->type == OBJECT_TYPE_INTEGER);
+        -: 1004:
+    #####: 1005:  integer_obj->value.i = value;
+        -: 1006:
+    #####: 1007:  return ERROR_SUCCESS;
+        -: 1008:}
+        -: 1009:
+        -: 1010:
+    #####: 1011:int yr_object_set_float(
+        -: 1012:    double value,
+        -: 1013:    YR_OBJECT* object,
+        -: 1014:    const char* field,
+        -: 1015:    ...)
+        -: 1016:{
+        -: 1017:  YR_OBJECT* double_obj;
+        -: 1018:
+        -: 1019:  va_list args;
+    #####: 1020:  va_start(args, field);
+        -: 1021:
+    #####: 1022:  if (field != NULL)
+    #####: 1023:    double_obj = _yr_object_lookup(object, OBJECT_CREATE, field, args);
+        -: 1024:  else
+    #####: 1025:    double_obj = object;
+        -: 1026:
+    #####: 1027:  va_end(args);
+        -: 1028:
+    #####: 1029:  if (double_obj == NULL)
+        -: 1030:  {
+    #####: 1031:    if (field != NULL)
+    #####: 1032:      return ERROR_INSUFFICIENT_MEMORY;
+        -: 1033:    else
+    #####: 1034:      return ERROR_INVALID_ARGUMENT;
+        -: 1035:  }
+        -: 1036:
+    #####: 1037:  assert(double_obj->type == OBJECT_TYPE_FLOAT);
+        -: 1038:
+    #####: 1039:  double_obj->value.d = value;
+        -: 1040:
+    #####: 1041:  return ERROR_SUCCESS;
+        -: 1042:}
+        -: 1043:
+        -: 1044:
+    #####: 1045:int yr_object_set_string(
+        -: 1046:    const char* value,
+        -: 1047:    size_t len,
+        -: 1048:    YR_OBJECT* object,
+        -: 1049:    const char* field,
+        -: 1050:    ...)
+        -: 1051:{
+        -: 1052:  YR_OBJECT* string_obj;
+        -: 1053:
+        -: 1054:  va_list args;
+    #####: 1055:  va_start(args, field);
+        -: 1056:
+    #####: 1057:  if (field != NULL)
+    #####: 1058:    string_obj = _yr_object_lookup(object, OBJECT_CREATE, field, args);
+        -: 1059:  else
+    #####: 1060:    string_obj = object;
+        -: 1061:
+    #####: 1062:  va_end(args);
+        -: 1063:
+    #####: 1064:  if (string_obj == NULL)
+        -: 1065:  {
+    #####: 1066:    if (field != NULL)
+    #####: 1067:      return ERROR_INSUFFICIENT_MEMORY;
+        -: 1068:    else
+    #####: 1069:      return ERROR_INVALID_ARGUMENT;
+        -: 1070:  }
+        -: 1071:
+    #####: 1072:  assert(string_obj->type == OBJECT_TYPE_STRING);
+        -: 1073:
+    #####: 1074:  if (string_obj->value.ss != NULL)
+    #####: 1075:    yr_free(string_obj->value.ss);
+        -: 1076:
+    #####: 1077:  if (value != NULL)
+        -: 1078:  {
+    #####: 1079:    string_obj->value.ss = (SIZED_STRING*) yr_malloc(
+        -: 1080:        len + sizeof(SIZED_STRING));
+        -: 1081:
+    #####: 1082:    if (string_obj->value.ss == NULL)
+    #####: 1083:      return ERROR_INSUFFICIENT_MEMORY;
+        -: 1084:
+    #####: 1085:    string_obj->value.ss->length = (uint32_t) len;
+    #####: 1086:    string_obj->value.ss->flags = 0;
+        -: 1087:
+    #####: 1088:    memcpy(string_obj->value.ss->c_string, value, len);
+    #####: 1089:    string_obj->value.ss->c_string[len] = '\0';
+        -: 1090:  }
+        -: 1091:  else
+        -: 1092:  {
+    #####: 1093:    string_obj->value.ss = NULL;
+        -: 1094:  }
+        -: 1095:
+    #####: 1096:  return ERROR_SUCCESS;
+        -: 1097:}
+        -: 1098:
+        -: 1099:
+    #####: 1100:YR_OBJECT* yr_object_get_root(
+        -: 1101:    YR_OBJECT* object)
+        -: 1102:{
+    #####: 1103:  YR_OBJECT* o = object;
+        -: 1104:
+    #####: 1105:  while (o->parent != NULL)
+    #####: 1106:    o = o->parent;
+        -: 1107:
+    #####: 1108:  return o;
+        -: 1109:}
+        -: 1110:
+    #####: 1111:YR_API void yr_object_print_data(
+        -: 1112:    YR_OBJECT* object,
+        -: 1113:    int indent,
+        -: 1114:    int print_identifier)
+        -: 1115:{
+        -: 1116:  YR_DICTIONARY_ITEMS* dict_items;
+        -: 1117:  YR_ARRAY_ITEMS* array_items;
+        -: 1118:  YR_STRUCTURE_MEMBER* member;
+        -: 1119:
+        -: 1120:  char indent_spaces[32];
+        -: 1121:  int i;
+        -: 1122:
+    #####: 1123:  indent = yr_min(indent, sizeof(indent_spaces) - 1);
+        -: 1124:
+    #####: 1125:  memset(indent_spaces, '\t', indent);
+    #####: 1126:  indent_spaces[indent] = '\0';
+        -: 1127:
+    #####: 1128:  if (print_identifier && object->type != OBJECT_TYPE_FUNCTION)
+    #####: 1129:    printf("%s%s", indent_spaces, object->identifier);
+        -: 1130:
+    #####: 1131:  switch(object->type)
+        -: 1132:  {
+    #####: 1133:    case OBJECT_TYPE_INTEGER:
+        -: 1134:
+    #####: 1135:      if (object->value.i != UNDEFINED)
+    #####: 1136:        printf(" = %" PRId64, object->value.i);
+        -: 1137:      else
+    #####: 1138:        printf(" = UNDEFINED");
+        -: 1139:
+    #####: 1140:      break;
+        -: 1141:
+    #####: 1142:    case OBJECT_TYPE_STRING:
+        -: 1143:
+    #####: 1144:      if (object->value.ss != NULL)
+        -: 1145:      {
+        -: 1146:        size_t l;
+    #####: 1147:        printf(" = \"");
+        -: 1148:
+    #####: 1149:        for (l = 0; l < object->value.ss->length; l++)
+        -: 1150:        {
+    #####: 1151:          char c = object->value.ss->c_string[l];
+        -: 1152:
+    #####: 1153:          if (isprint((unsigned char) c))
+    #####: 1154:            printf("%c", c);
+        -: 1155:          else
+    #####: 1156:            printf("\\x%02x", (unsigned char) c);
+        -: 1157:        }
+        -: 1158:
+    #####: 1159:        printf("\"");
+        -: 1160:      }
+        -: 1161:      else
+        -: 1162:      {
+    #####: 1163:        printf(" = UNDEFINED");
+        -: 1164:      }
+        -: 1165:
+    #####: 1166:      break;
+        -: 1167:
+    #####: 1168:    case OBJECT_TYPE_STRUCTURE:
+        -: 1169:
+    #####: 1170:      member = object_as_structure(object)->members;
+        -: 1171:
+    #####: 1172:      while (member != NULL)
+        -: 1173:      {
+    #####: 1174:        if (member->object->type != OBJECT_TYPE_FUNCTION)
+        -: 1175:        {
+    #####: 1176:          printf("\n");
+    #####: 1177:          yr_object_print_data(member->object, indent + 1, 1);
+        -: 1178:        }
+    #####: 1179:        member = member->next;
+        -: 1180:      }
+        -: 1181:
+    #####: 1182:      break;
+        -: 1183:
+    #####: 1184:    case OBJECT_TYPE_ARRAY:
+        -: 1185:
+    #####: 1186:      array_items = object_as_array(object)->items;
+        -: 1187:
+    #####: 1188:      if (array_items != NULL)
+        -: 1189:      {
+    #####: 1190:        for (i = 0; i < array_items->count; i++)
+        -: 1191:        {
+    #####: 1192:          if (array_items->objects[i] != NULL)
+        -: 1193:          {
+    #####: 1194:            printf("\n%s\t[%d]", indent_spaces, i);
+    #####: 1195:            yr_object_print_data(array_items->objects[i], indent + 1, 0);
+        -: 1196:          }
+        -: 1197:        }
+        -: 1198:      }
+        -: 1199:
+    #####: 1200:      break;
+        -: 1201:
+    #####: 1202:    case OBJECT_TYPE_DICTIONARY:
+        -: 1203:
+    #####: 1204:      dict_items = object_as_dictionary(object)->items;
+        -: 1205:
+    #####: 1206:      if (dict_items != NULL)
+        -: 1207:      {
+    #####: 1208:        for (i = 0; i < dict_items->used; i++)
+        -: 1209:        {
+    #####: 1210:          printf("\n%s\t%s", indent_spaces, dict_items->objects[i].key);
+    #####: 1211:          yr_object_print_data(dict_items->objects[i].obj, indent + 1, 0);
+        -: 1212:        }
+        -: 1213:      }
+        -: 1214:
+    #####: 1215:      break;
+        -: 1216:  }
+    #####: 1217:}

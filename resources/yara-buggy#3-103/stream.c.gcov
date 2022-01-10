@@ -1,0 +1,62 @@
+        -:    0:Source:stream.c
+        -:    0:Graph:/home/workspace/libyara/stream.gcno
+        -:    0:Data:/home/workspace/libyara/stream.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2015. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <stddef.h>
+        -:   31:#include <yara/stream.h>
+        -:   32:
+        -:   33:
+    #####:   34:size_t yr_stream_read(
+        -:   35:    void* ptr,
+        -:   36:    size_t size,
+        -:   37:    size_t count,
+        -:   38:    YR_STREAM* stream)
+        -:   39:{
+    #####:   40:  if (stream->read == NULL)
+    #####:   41:    return 0;
+        -:   42:
+    #####:   43:  return stream->read(ptr, size, count, stream->user_data);
+        -:   44:}
+        -:   45:
+        -:   46:
+    #####:   47:size_t yr_stream_write(
+        -:   48:    const void* ptr,
+        -:   49:    size_t size,
+        -:   50:    size_t count,
+        -:   51:    YR_STREAM* stream)
+        -:   52:{
+    #####:   53:  if (stream->write == NULL)
+    #####:   54:    return 0;
+        -:   55:
+    #####:   56:  return stream->write(ptr, size, count, stream->user_data);
+        -:   57:}

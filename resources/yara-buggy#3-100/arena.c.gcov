@@ -1,0 +1,1134 @@
+        -:    0:Source:arena.c
+        -:    0:Graph:/home/workspace/libyara/arena.gcno
+        -:    0:Data:/home/workspace/libyara/arena.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2013. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:/*
+        -:   31:
+        -:   32:This module implements a structure I've called "arena". An arena is a data
+        -:   33:container composed of a set of pages. The arena grows automatically when
+        -:   34:needed by adding new pages to hold new data. Arenas can be saved and loaded
+        -:   35:from files.
+        -:   36:
+        -:   37:*/
+        -:   38:
+        -:   39:#include <string.h>
+        -:   40:#include <assert.h>
+        -:   41:#include <stdlib.h>
+        -:   42:#include <stdarg.h>
+        -:   43:#include <stddef.h>
+        -:   44:
+        -:   45:
+        -:   46:#include <yara/arena.h>
+        -:   47:#include <yara/mem.h>
+        -:   48:#include <yara/error.h>
+        -:   49:#include <yara/limits.h>
+        -:   50:#include <yara/hash.h>
+        -:   51:
+        -:   52:#pragma pack(push)
+        -:   53:#pragma pack(1)
+        -:   54:
+        -:   55:typedef struct _ARENA_FILE_HEADER
+        -:   56:{
+        -:   57:  char      magic[4];
+        -:   58:  uint32_t  size;
+        -:   59:  uint32_t  version;
+        -:   60:
+        -:   61:} ARENA_FILE_HEADER;
+        -:   62:
+        -:   63:#pragma pack(pop)
+        -:   64:
+        -:   65:
+        -:   66:#define free_space(page) \
+        -:   67:    ((page)->size - (page)->used)
+        -:   68:
+        -:   69:
+        -:   70://
+        -:   71:// _yr_arena_new_page
+        -:   72://
+        -:   73:// Creates a new arena page of a given size
+        -:   74://
+        -:   75:// Args:
+        -:   76://    size_t size  - Size of the page
+        -:   77://
+        -:   78:// Returns:
+        -:   79://    A pointer to the newly created YR_ARENA_PAGE structure
+        -:   80://
+        -:   81:
+    #####:   82:static YR_ARENA_PAGE* _yr_arena_new_page(
+        -:   83:    size_t size)
+        -:   84:{
+        -:   85:  YR_ARENA_PAGE* new_page;
+        -:   86:
+    #####:   87:  new_page = (YR_ARENA_PAGE*) yr_malloc(sizeof(YR_ARENA_PAGE));
+        -:   88:
+    #####:   89:  if (new_page == NULL)
+    #####:   90:    return NULL;
+        -:   91:
+    #####:   92:  new_page->address = (uint8_t*) yr_malloc(size);
+        -:   93:
+    #####:   94:  if (new_page->address == NULL)
+        -:   95:  {
+    #####:   96:    yr_free(new_page);
+    #####:   97:    return NULL;
+        -:   98:  }
+        -:   99:
+    #####:  100:  new_page->size = size;
+    #####:  101:  new_page->used = 0;
+    #####:  102:  new_page->next = NULL;
+    #####:  103:  new_page->prev = NULL;
+    #####:  104:  new_page->reloc_list_head = NULL;
+    #####:  105:  new_page->reloc_list_tail = NULL;
+        -:  106:
+    #####:  107:  return new_page;
+        -:  108:}
+        -:  109:
+        -:  110:
+        -:  111://
+        -:  112:// yr_arena_page_for_address
+        -:  113://
+        -:  114:// Returns the page within the arena where an address reside.
+        -:  115://
+        -:  116:// Args:
+        -:  117://    YR_ARENA* arena   - Pointer to the arena
+        -:  118://    void* address  - Address to be located
+        -:  119://
+        -:  120:// Returns:
+        -:  121://    A pointer the corresponding YR_ARENA_PAGE structure where the address
+        -:  122://    resides.
+        -:  123://
+        -:  124:
+    #####:  125:YR_ARENA_PAGE* yr_arena_page_for_address(
+        -:  126:    YR_ARENA* arena,
+        -:  127:    void* address)
+        -:  128:{
+        -:  129:  YR_ARENA_PAGE* page;
+        -:  130:
+        -:  131:  // Most of the times this function is called with an address within
+        -:  132:  // the current page, let's check the current page first to avoid
+        -:  133:  // looping through the page list.
+        -:  134:
+    #####:  135:  page = arena->current_page;
+        -:  136:
+    #####:  137:  if (page != NULL &&
+    #####:  138:      (uint8_t*) address >= page->address &&
+    #####:  139:      (uint8_t*) address < page->address + page->used)
+    #####:  140:    return page;
+        -:  141:
+    #####:  142:  page = arena->page_list_head;
+        -:  143:
+    #####:  144:  while (page != NULL)
+        -:  145:  {
+    #####:  146:    if ((uint8_t*) address >= page->address &&
+    #####:  147:        (uint8_t*) address < page->address + page->used)
+    #####:  148:      return page;
+        -:  149:
+    #####:  150:    page = page->next;
+        -:  151:  }
+        -:  152:
+    #####:  153:  return NULL;
+        -:  154:}
+        -:  155:
+        -:  156:
+        -:  157://
+        -:  158:// _yr_arena_make_ptr_relocatable
+        -:  159://
+        -:  160:// Tells the arena that certain addresses contains a relocatable pointer.
+        -:  161://
+        -:  162:// Args:
+        -:  163://    YR_ARENA* arena    - Pointer the arena
+        -:  164://    void* address      - Base address
+        -:  165://    va_list offsets    - List of offsets relative to base address
+        -:  166://
+        -:  167:// Returns:
+        -:  168://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  169://
+        -:  170:
+    #####:  171:static int _yr_arena_make_ptr_relocatable(
+        -:  172:    YR_ARENA* arena,
+        -:  173:    void* base,
+        -:  174:    va_list offsets)
+        -:  175:{
+        -:  176:  YR_RELOC* reloc;
+        -:  177:  YR_ARENA_PAGE* page;
+        -:  178:
+        -:  179:  size_t offset;
+        -:  180:  size_t base_offset;
+        -:  181:
+    #####:  182:  int result = ERROR_SUCCESS;
+        -:  183:
+        -:  184:  // If the arena must be relocatable.
+    #####:  185:  assert(arena->flags & ARENA_FLAGS_RELOCATABLE);
+        -:  186:
+    #####:  187:  page = yr_arena_page_for_address(arena, base);
+        -:  188:
+    #####:  189:  assert(page != NULL);
+        -:  190:
+    #####:  191:  base_offset = (uint8_t*) base - page->address;
+    #####:  192:  offset = va_arg(offsets, size_t);
+        -:  193:
+    #####:  194:  while (offset != -1)
+        -:  195:  {
+    #####:  196:    assert(page->used >= sizeof(int64_t));
+    #####:  197:    assert(base_offset + offset <= page->used - sizeof(int64_t));
+        -:  198:
+    #####:  199:    reloc = (YR_RELOC*) yr_malloc(sizeof(YR_RELOC));
+        -:  200:
+    #####:  201:    if (reloc == NULL)
+    #####:  202:      return ERROR_INSUFFICIENT_MEMORY;
+        -:  203:
+    #####:  204:    reloc->offset = (uint32_t) (base_offset + offset);
+    #####:  205:    reloc->next = NULL;
+        -:  206:
+    #####:  207:    if (page->reloc_list_head == NULL)
+    #####:  208:      page->reloc_list_head = reloc;
+        -:  209:
+    #####:  210:    if (page->reloc_list_tail != NULL)
+    #####:  211:      page->reloc_list_tail->next = reloc;
+        -:  212:
+    #####:  213:    page->reloc_list_tail = reloc;
+    #####:  214:    offset = va_arg(offsets, size_t);
+        -:  215:  }
+        -:  216:
+    #####:  217:  return result;
+        -:  218:}
+        -:  219:
+        -:  220:
+        -:  221://
+        -:  222:// yr_arena_create
+        -:  223://
+        -:  224:// Creates a new arena.
+        -:  225://
+        -:  226:// Args:
+        -:  227://    size_t initial_size  - Initial size
+        -:  228://    int flags            - Flags
+        -:  229://    YR_ARENA** arena     - Address where a pointer to the new arena will be
+        -:  230://                           written to.
+        -:  231://
+        -:  232:// Returns:
+        -:  233://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  234://
+        -:  235:
+    #####:  236:int yr_arena_create(
+        -:  237:    size_t initial_size,
+        -:  238:    int flags,
+        -:  239:    YR_ARENA** arena)
+        -:  240:{
+        -:  241:  YR_ARENA* new_arena;
+        -:  242:  YR_ARENA_PAGE* new_page;
+        -:  243:
+    #####:  244:  *arena = NULL;
+    #####:  245:  new_arena = (YR_ARENA*) yr_malloc(sizeof(YR_ARENA));
+        -:  246:
+    #####:  247:  if (new_arena == NULL)
+    #####:  248:    return ERROR_INSUFFICIENT_MEMORY;
+        -:  249:
+    #####:  250:  new_page = _yr_arena_new_page(initial_size);
+        -:  251:
+    #####:  252:  if (new_page == NULL)
+        -:  253:  {
+    #####:  254:    yr_free(new_arena);
+    #####:  255:    return ERROR_INSUFFICIENT_MEMORY;
+        -:  256:  }
+        -:  257:
+    #####:  258:  new_arena->page_list_head = new_page;
+    #####:  259:  new_arena->current_page = new_page;
+    #####:  260:  new_arena->flags = flags | ARENA_FLAGS_COALESCED;
+        -:  261:
+    #####:  262:  *arena = new_arena;
+    #####:  263:  return ERROR_SUCCESS;
+        -:  264:}
+        -:  265:
+        -:  266:
+        -:  267://
+        -:  268:// yr_arena_destroy
+        -:  269://
+        -:  270:// Destroys an arena releasing its resource.
+        -:  271://
+        -:  272:// Args:
+        -:  273://    YR_ARENA* arena  - Pointer to the arena.
+        -:  274://
+        -:  275:// Returns:
+        -:  276://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  277://
+        -:  278:
+    #####:  279:void yr_arena_destroy(
+        -:  280:    YR_ARENA* arena)
+        -:  281:{
+        -:  282:  YR_RELOC* reloc;
+        -:  283:  YR_RELOC* next_reloc;
+        -:  284:  YR_ARENA_PAGE* page;
+        -:  285:  YR_ARENA_PAGE* next_page;
+        -:  286:
+    #####:  287:  if (arena == NULL)
+    #####:  288:    return;
+        -:  289:
+    #####:  290:  page = arena->page_list_head;
+        -:  291:
+    #####:  292:  while(page != NULL)
+        -:  293:  {
+    #####:  294:    next_page = page->next;
+    #####:  295:    reloc = page->reloc_list_head;
+        -:  296:
+    #####:  297:    while (reloc != NULL)
+        -:  298:    {
+    #####:  299:      next_reloc = reloc->next;
+    #####:  300:      yr_free(reloc);
+    #####:  301:      reloc = next_reloc;
+        -:  302:    }
+        -:  303:
+    #####:  304:    yr_free(page->address);
+    #####:  305:    yr_free(page);
+        -:  306:
+    #####:  307:    page = next_page;
+        -:  308:  }
+        -:  309:
+    #####:  310:  yr_free(arena);
+        -:  311:}
+        -:  312:
+        -:  313:
+        -:  314://
+        -:  315:// yr_arena_base_address
+        -:  316://
+        -:  317:// Returns the base address for the arena.
+        -:  318://
+        -:  319:// Args:
+        -:  320://    YR_ARENA* arena  - Pointer to the arena.
+        -:  321://
+        -:  322:// Returns:
+        -:  323://    A pointer to the arena's data. NULL if no data has been written to
+        -:  324://    the arena yet.
+        -:  325://
+        -:  326:
+    #####:  327:void* yr_arena_base_address(
+        -:  328:  YR_ARENA* arena)
+        -:  329:{
+    #####:  330:  if (arena->page_list_head->used == 0)
+    #####:  331:    return NULL;
+        -:  332:
+    #####:  333:  return arena->page_list_head->address;
+        -:  334:}
+        -:  335:
+        -:  336:
+        -:  337://
+        -:  338:// yr_arena_next_address
+        -:  339://
+        -:  340:// Given an address and an offset, returns the address where
+        -:  341:// address + offset resides. The arena is a collection of non-contiguous
+        -:  342:// regions of memory (pages), if address is pointing at the end of a page,
+        -:  343:// address + offset could cross the page boundary and point at somewhere
+        -:  344:// within the next page, this function handles these situations. It works
+        -:  345:// also with negative offsets.
+        -:  346://
+        -:  347:// Args:
+        -:  348://    YR_ARENA* arena  - Pointer to the arena.
+        -:  349://    void* address    - Base address.
+        -:  350://    int offset       - Offset.
+        -:  351://
+        -:  352:// Returns:
+        -:  353://    A pointer
+        -:  354://
+        -:  355:
+        -:  356:
+    #####:  357:void* yr_arena_next_address(
+        -:  358:  YR_ARENA* arena,
+        -:  359:  void* address,
+        -:  360:  size_t offset)
+        -:  361:{
+        -:  362:  YR_ARENA_PAGE* page;
+        -:  363:
+    #####:  364:  page = yr_arena_page_for_address(arena, address);
+        -:  365:
+    #####:  366:  assert(page != NULL);
+        -:  367:
+    #####:  368:  if ((uint8_t*) address + offset >= page->address &&
+    #####:  369:      (uint8_t*) address + offset < page->address + page->used)
+        -:  370:  {
+    #####:  371:    return (uint8_t*) address + offset;
+        -:  372:  }
+        -:  373:
+    #####:  374:  if (offset > 0)
+        -:  375:  {
+    #####:  376:    offset -= page->address + page->used - (uint8_t*) address;
+    #####:  377:    page = page->next;
+        -:  378:
+    #####:  379:    while (page != NULL)
+        -:  380:    {
+    #####:  381:      if (offset < page->used)
+    #####:  382:        return page->address + offset;
+        -:  383:
+    #####:  384:      offset -= page->used;
+    #####:  385:      page = page->next;
+        -:  386:    }
+        -:  387:  }
+        -:  388:  else
+        -:  389:  {
+    #####:  390:    offset += page->used;
+    #####:  391:    page = page->prev;
+        -:  392:
+    #####:  393:    while (page != NULL)
+        -:  394:    {
+    #####:  395:      if (offset < page->used)
+    #####:  396:        return page->address + page->used + offset;
+        -:  397:
+    #####:  398:      offset += page->used;
+    #####:  399:      page = page->prev;
+        -:  400:    }
+        -:  401:  }
+        -:  402:
+    #####:  403:  return NULL;
+        -:  404:}
+        -:  405:
+        -:  406:
+        -:  407://
+        -:  408:// yr_arena_coalesce
+        -:  409://
+        -:  410:// Coalesce the arena into a single page. This is a required step before
+        -:  411:// saving the arena to a file.
+        -:  412://
+        -:  413:// Args:
+        -:  414://    YR_ARENA* arena  - Pointer to the arena.
+        -:  415://
+        -:  416:// Returns:
+        -:  417://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  418://
+        -:  419:
+    #####:  420:int yr_arena_coalesce(
+        -:  421:    YR_ARENA* arena)
+        -:  422:{
+        -:  423:  YR_ARENA_PAGE* page;
+        -:  424:  YR_ARENA_PAGE* big_page;
+        -:  425:  YR_ARENA_PAGE* next_page;
+        -:  426:  YR_RELOC* reloc;
+        -:  427:
+        -:  428:  uint8_t** reloc_address;
+        -:  429:  uint8_t* reloc_target;
+    #####:  430:  size_t total_size = 0;
+        -:  431:
+    #####:  432:  page = arena->page_list_head;
+        -:  433:
+    #####:  434:  while(page != NULL)
+        -:  435:  {
+    #####:  436:    total_size += page->used;
+    #####:  437:    page = page->next;
+        -:  438:  }
+        -:  439:
+        -:  440:  // Create a new page that will contain the entire arena.
+    #####:  441:  big_page = _yr_arena_new_page(total_size);
+        -:  442:
+    #####:  443:  if (big_page == NULL)
+    #####:  444:    return ERROR_INSUFFICIENT_MEMORY;
+        -:  445:
+        -:  446:  // Copy data from current pages to the big page and adjust relocs.
+    #####:  447:  page = arena->page_list_head;
+        -:  448:
+    #####:  449:  while (page != NULL)
+        -:  450:  {
+    #####:  451:    page->new_address = big_page->address + big_page->used;
+    #####:  452:    memcpy(page->new_address, page->address, page->used);
+        -:  453:
+    #####:  454:    reloc = page->reloc_list_head;
+        -:  455:
+    #####:  456:    while (reloc != NULL)
+        -:  457:    {
+    #####:  458:      reloc->offset += (uint32_t) big_page->used;
+    #####:  459:      reloc = reloc->next;
+        -:  460:    }
+        -:  461:
+    #####:  462:    if (big_page->reloc_list_head == NULL)
+    #####:  463:      big_page->reloc_list_head = page->reloc_list_head;
+        -:  464:
+    #####:  465:    if (big_page->reloc_list_tail != NULL)
+    #####:  466:      big_page->reloc_list_tail->next = page->reloc_list_head;
+        -:  467:
+    #####:  468:    if (page->reloc_list_tail != NULL)
+    #####:  469:      big_page->reloc_list_tail = page->reloc_list_tail;
+        -:  470:
+    #####:  471:    big_page->used += page->used;
+    #####:  472:    page = page->next;
+        -:  473:  }
+        -:  474:
+        -:  475:  // Relocate pointers.
+    #####:  476:  reloc = big_page->reloc_list_head;
+        -:  477:
+    #####:  478:  while (reloc != NULL)
+        -:  479:  {
+    #####:  480:    reloc_address = (uint8_t**) (big_page->address + reloc->offset);
+    #####:  481:    reloc_target = *reloc_address;
+        -:  482:
+    #####:  483:    if (reloc_target != NULL)
+        -:  484:    {
+    #####:  485:      page = yr_arena_page_for_address(arena, reloc_target);
+    #####:  486:      assert(page != NULL);
+    #####:  487:      *reloc_address = page->new_address + (reloc_target - page->address);
+        -:  488:    }
+        -:  489:
+    #####:  490:    reloc = reloc->next;
+        -:  491:  }
+        -:  492:
+        -:  493:  // Release current pages.
+    #####:  494:  page = arena->page_list_head;
+        -:  495:
+    #####:  496:  while(page != NULL)
+        -:  497:  {
+    #####:  498:    next_page = page->next;
+    #####:  499:    yr_free(page->address);
+    #####:  500:    yr_free(page);
+    #####:  501:    page = next_page;
+        -:  502:  }
+        -:  503:
+    #####:  504:  arena->page_list_head = big_page;
+    #####:  505:  arena->current_page = big_page;
+    #####:  506:  arena->flags |= ARENA_FLAGS_COALESCED;
+        -:  507:
+    #####:  508:  return ERROR_SUCCESS;
+        -:  509:}
+        -:  510:
+        -:  511:
+        -:  512://
+        -:  513:// yr_arena_reserve_memory
+        -:  514://
+        -:  515:// Ensures that the arena have enough contiguous memory for future allocations.
+        -:  516:// if the available space in the current page is lower than "size", a new page
+        -:  517:// is allocated.
+        -:  518://
+        -:  519:// Args:
+        -:  520://    YR_ARENA* arena         - Pointer to the arena.
+        -:  521://    size_t size             - Size of the region to be reserved.
+        -:  522://
+        -:  523:// Returns:
+        -:  524://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  525://
+        -:  526:
+        -:  527:
+    #####:  528:int yr_arena_reserve_memory(
+        -:  529:    YR_ARENA* arena,
+        -:  530:    size_t size)
+        -:  531:{
+        -:  532:  YR_ARENA_PAGE* new_page;
+        -:  533:  size_t new_page_size;
+        -:  534:  uint8_t* new_page_address;
+        -:  535:
+    #####:  536:  if (size > free_space(arena->current_page))
+        -:  537:  {
+        -:  538:    // Requested space is bigger than current page's empty space,
+        -:  539:    // lets calculate the size for a new page.
+        -:  540:
+    #####:  541:    new_page_size = arena->current_page->size * 2;
+        -:  542:
+    #####:  543:    while (new_page_size < size)
+    #####:  544:      new_page_size *= 2;
+        -:  545:
+    #####:  546:    if (arena->current_page->used == 0)
+        -:  547:    {
+        -:  548:      // Current page is not used at all, it can be reallocated.
+        -:  549:
+    #####:  550:      new_page_address = (uint8_t*) yr_realloc(
+    #####:  551:          arena->current_page->address,
+        -:  552:          new_page_size);
+        -:  553:
+    #####:  554:      if (new_page_address == NULL)
+    #####:  555:        return ERROR_INSUFFICIENT_MEMORY;
+        -:  556:
+    #####:  557:      arena->current_page->address = new_page_address;
+    #####:  558:      arena->current_page->size = new_page_size;
+        -:  559:    }
+        -:  560:    else
+        -:  561:    {
+    #####:  562:      new_page = _yr_arena_new_page(new_page_size);
+        -:  563:
+    #####:  564:      if (new_page == NULL)
+    #####:  565:        return ERROR_INSUFFICIENT_MEMORY;
+        -:  566:
+    #####:  567:      new_page->prev = arena->current_page;
+    #####:  568:      arena->current_page->next = new_page;
+    #####:  569:      arena->current_page = new_page;
+    #####:  570:      arena->flags &= ~ARENA_FLAGS_COALESCED;
+        -:  571:    }
+        -:  572:  }
+        -:  573:
+    #####:  574:  return ERROR_SUCCESS;
+        -:  575:}
+        -:  576:
+        -:  577:
+        -:  578://
+        -:  579:// yr_arena_allocate_memory
+        -:  580://
+        -:  581:// Allocates memory within the arena.
+        -:  582://
+        -:  583:// Args:
+        -:  584://    YR_ARENA* arena         - Pointer to the arena.
+        -:  585://    size_t size             - Size of the region to be allocated.
+        -:  586://    void** allocated_memory - Address of a pointer to newly allocated
+        -:  587://                              region.
+        -:  588:// Returns:
+        -:  589://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  590://
+        -:  591:
+    #####:  592:int yr_arena_allocate_memory(
+        -:  593:    YR_ARENA* arena,
+        -:  594:    size_t size,
+        -:  595:    void** allocated_memory)
+        -:  596:{
+    #####:  597:  FAIL_ON_ERROR(yr_arena_reserve_memory(arena, size));
+        -:  598:
+    #####:  599:  *allocated_memory = arena->current_page->address + \
+    #####:  600:                      arena->current_page->used;
+        -:  601:
+    #####:  602:  arena->current_page->used += size;
+        -:  603:
+    #####:  604:  return ERROR_SUCCESS;
+        -:  605:}
+        -:  606:
+        -:  607:
+        -:  608://
+        -:  609:// yr_arena_allocate_struct
+        -:  610://
+        -:  611:// Allocates a structure within the arena. This function is similar to
+        -:  612:// yr_arena_allocate_memory but additionally receives a variable-length
+        -:  613:// list of offsets within the structure where pointers reside. This allows
+        -:  614:// the arena to keep track of pointers that must be adjusted when memory
+        -:  615:// is relocated. This is an example on how to invoke this function:
+        -:  616://
+        -:  617://  yr_arena_allocate_struct(
+        -:  618://        arena,
+        -:  619://        sizeof(MY_STRUCTURE),
+        -:  620://        (void**) &my_structure_ptr,
+        -:  621://        offsetof(MY_STRUCTURE, field_1),
+        -:  622://        offsetof(MY_STRUCTURE, field_2),
+        -:  623://        ..
+        -:  624://        offsetof(MY_STRUCTURE, field_N),
+        -:  625://        EOL);
+        -:  626://
+        -:  627:// Args:
+        -:  628://    YR_ARENA* arena         - Pointer to the arena.
+        -:  629://    size_t size             - Size of the region to be allocated.
+        -:  630://    void** allocated_memory - Address of a pointer to newly allocated
+        -:  631://                              region.
+        -:  632://    ...                     - Variable number of offsets relative to the
+        -:  633://                              beginning of the struct. Offsets are of type
+        -:  634://                              size_t.
+        -:  635://
+        -:  636:// Returns:
+        -:  637://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  638://
+        -:  639:
+    #####:  640:int yr_arena_allocate_struct(
+        -:  641:    YR_ARENA* arena,
+        -:  642:    size_t size,
+        -:  643:    void** allocated_memory,
+        -:  644:    ...)
+        -:  645:{
+        -:  646:  int result;
+        -:  647:
+        -:  648:  va_list offsets;
+    #####:  649:  va_start(offsets, allocated_memory);
+        -:  650:
+    #####:  651:  result = yr_arena_allocate_memory(arena, size, allocated_memory);
+        -:  652:
+    #####:  653:  if (result == ERROR_SUCCESS && arena->flags & ARENA_FLAGS_RELOCATABLE)
+    #####:  654:    result = _yr_arena_make_ptr_relocatable(arena, *allocated_memory, offsets);
+        -:  655:
+    #####:  656:  va_end(offsets);
+        -:  657:
+    #####:  658:  if (result == ERROR_SUCCESS)
+    #####:  659:    memset(*allocated_memory, 0, size);
+        -:  660:
+    #####:  661:  return result;
+        -:  662:}
+        -:  663:
+        -:  664:
+        -:  665://
+        -:  666:// yr_arena_make_ptr_relocatable
+        -:  667://
+        -:  668:// Tells the arena that certain addresses contains a relocatable pointer.
+        -:  669://
+        -:  670:// Args:
+        -:  671://    YR_ARENA* arena    - Pointer to the arena.
+        -:  672://    void* base         - Address within the arena.
+        -:  673://    ...                - Variable number of size_t arguments with offsets
+        -:  674://                         relative to base.
+        -:  675://
+        -:  676:// Returns:
+        -:  677://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  678://
+        -:  679:
+    #####:  680:int yr_arena_make_ptr_relocatable(
+        -:  681:    YR_ARENA* arena,
+        -:  682:    void* base,
+        -:  683:    ...)
+        -:  684:{
+        -:  685:  int result;
+        -:  686:
+        -:  687:  va_list offsets;
+    #####:  688:  va_start(offsets, base);
+        -:  689:
+    #####:  690:  result = _yr_arena_make_ptr_relocatable(arena, base, offsets);
+        -:  691:
+    #####:  692:  va_end(offsets);
+        -:  693:
+    #####:  694:  return result;
+        -:  695:}
+        -:  696:
+        -:  697:
+        -:  698://
+        -:  699:// yr_arena_write_data
+        -:  700://
+        -:  701:// Writes data to the arena.
+        -:  702://
+        -:  703:// Args:
+        -:  704://    YR_ARENA* arena        - Pointer to the arena.
+        -:  705://    void* data             - Pointer to data to be written.
+        -:  706://    size_t size            - Size of data.
+        -:  707://    void** written_data    - Address where a pointer to the written data will
+        -:  708://                             be returned.
+        -:  709://
+        -:  710:// Returns:
+        -:  711://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  712://
+        -:  713:
+    #####:  714:int yr_arena_write_data(
+        -:  715:    YR_ARENA* arena,
+        -:  716:    const void* data,
+        -:  717:    size_t size,
+        -:  718:    void** written_data)
+        -:  719:{
+        -:  720:  void* output;
+        -:  721:  int result;
+        -:  722:
+    #####:  723:  if (size > free_space(arena->current_page))
+        -:  724:  {
+    #####:  725:    result = yr_arena_allocate_memory(arena, size, &output);
+        -:  726:
+    #####:  727:    if (result != ERROR_SUCCESS)
+    #####:  728:      return result;
+        -:  729:  }
+        -:  730:  else
+        -:  731:  {
+    #####:  732:    output = arena->current_page->address + arena->current_page->used;
+    #####:  733:    arena->current_page->used += size;
+        -:  734:  }
+        -:  735:
+    #####:  736:  memcpy(output, data, size);
+        -:  737:
+    #####:  738:  if (written_data != NULL)
+    #####:  739:    *written_data = output;
+        -:  740:
+    #####:  741:  return ERROR_SUCCESS;
+        -:  742:}
+        -:  743:
+        -:  744:
+        -:  745://
+        -:  746:// yr_arena_write_string
+        -:  747://
+        -:  748:// Writes string to the arena.
+        -:  749://
+        -:  750:// Args:
+        -:  751://    YR_ARENA* arena        - Pointer to the arena.
+        -:  752://    const char* string     - Pointer to string to be written.
+        -:  753://    char** written_string  - Address where a pointer to the written data will
+        -:  754://                             be returned.
+        -:  755://
+        -:  756:// Returns:
+        -:  757://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  758://
+        -:  759:
+    #####:  760:int yr_arena_write_string(
+        -:  761:    YR_ARENA* arena,
+        -:  762:    const char* string,
+        -:  763:    char** written_string)
+        -:  764:{
+    #####:  765:  return yr_arena_write_data(
+        -:  766:      arena,
+        -:  767:      (void*) string,
+    #####:  768:      strlen(string) + 1,
+        -:  769:      (void**) written_string);
+        -:  770:}
+        -:  771:
+        -:  772:
+        -:  773://
+        -:  774:// yr_arena_append
+        -:  775://
+        -:  776:// Appends source_arena to target_arena. This operation destroys source_arena,
+        -:  777:// after returning any pointer to source_arena is no longer valid. The data
+        -:  778:// from source_arena is guaranteed to be aligned to a 16 bytes boundary when
+        -:  779:// written to the source_arena
+        -:  780://
+        -:  781:// Args:
+        -:  782://    YR_ARENA* target_arena    - Pointer to target the arena.
+        -:  783://    YR_ARENA* source_arena    - Pointer to source arena.
+        -:  784://
+        -:  785:// Returns:
+        -:  786://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  787://
+        -:  788:
+    #####:  789:int yr_arena_append(
+        -:  790:    YR_ARENA* target_arena,
+        -:  791:    YR_ARENA* source_arena)
+        -:  792:{
+        -:  793:  uint8_t padding_data[15];
+    #####:  794:  size_t padding_size = 16 - target_arena->current_page->used % 16;
+        -:  795:
+    #####:  796:  if (padding_size < 16)
+        -:  797:  {
+    #####:  798:    memset(&padding_data, 0xCC, padding_size);
+        -:  799:
+    #####:  800:    FAIL_ON_ERROR(yr_arena_write_data(
+        -:  801:        target_arena,
+        -:  802:        padding_data,
+        -:  803:        padding_size,
+        -:  804:        NULL));
+        -:  805:  }
+        -:  806:
+    #####:  807:  target_arena->current_page->next = source_arena->page_list_head;
+    #####:  808:  source_arena->page_list_head->prev = target_arena->current_page;
+    #####:  809:  target_arena->current_page = source_arena->current_page;
+        -:  810:
+    #####:  811:  yr_free(source_arena);
+        -:  812:
+    #####:  813:  return ERROR_SUCCESS;
+        -:  814:}
+        -:  815:
+        -:  816:
+        -:  817://
+        -:  818:// yr_arena_duplicate
+        -:  819://
+        -:  820:// Duplicates the arena, making an exact copy. This function requires the
+        -:  821:// arena to be coalesced.
+        -:  822://
+        -:  823:// Args:
+        -:  824://    YR_ARENA* arena        - Pointer to the arena.
+        -:  825://    YR_ARENA** duplicated  - Address where a pointer to the new arena arena
+        -:  826://                             will be returned.
+        -:  827://
+        -:  828:// Returns:
+        -:  829://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -:  830://
+        -:  831:
+    #####:  832:int yr_arena_duplicate(
+        -:  833:    YR_ARENA* arena,
+        -:  834:    YR_ARENA** duplicated)
+        -:  835:{
+        -:  836:  YR_RELOC* reloc;
+        -:  837:  YR_RELOC* new_reloc;
+        -:  838:  YR_ARENA_PAGE* page;
+        -:  839:  YR_ARENA_PAGE* new_page;
+        -:  840:  YR_ARENA* new_arena;
+        -:  841:  uint8_t** reloc_address;
+        -:  842:  uint8_t* reloc_target;
+        -:  843:
+        -:  844:  // Arena must be coalesced and relocatable in order to be duplicated.
+    #####:  845:  assert(arena->flags & ARENA_FLAGS_COALESCED);
+    #####:  846:  assert(arena->flags & ARENA_FLAGS_RELOCATABLE);
+        -:  847:
+    #####:  848:  page = arena->page_list_head;
+        -:  849:
+    #####:  850:  FAIL_ON_ERROR(yr_arena_create(page->size, arena->flags, &new_arena));
+        -:  851:
+    #####:  852:  new_page = new_arena->current_page;
+    #####:  853:  new_page->used = page->used;
+        -:  854:
+    #####:  855:  memcpy(new_page->address, page->address, page->size);
+        -:  856:
+    #####:  857:  reloc = page->reloc_list_head;
+        -:  858:
+    #####:  859:  while (reloc != NULL)
+        -:  860:  {
+    #####:  861:    new_reloc = (YR_RELOC*) yr_malloc(sizeof(YR_RELOC));
+        -:  862:
+    #####:  863:    if (new_reloc == NULL)
+        -:  864:    {
+    #####:  865:      yr_arena_destroy(new_arena);
+    #####:  866:      return ERROR_INSUFFICIENT_MEMORY;
+        -:  867:    }
+        -:  868:
+    #####:  869:    new_reloc->offset = reloc->offset;
+    #####:  870:    new_reloc->next = NULL;
+        -:  871:
+    #####:  872:    if (new_page->reloc_list_head == NULL)
+    #####:  873:      new_page->reloc_list_head = new_reloc;
+        -:  874:
+    #####:  875:    if (new_page->reloc_list_tail != NULL)
+    #####:  876:      new_page->reloc_list_tail->next = new_reloc;
+        -:  877:
+    #####:  878:    new_page->reloc_list_tail = new_reloc;
+        -:  879:
+    #####:  880:    reloc_address = (uint8_t**) (new_page->address + new_reloc->offset);
+    #####:  881:    reloc_target = *reloc_address;
+        -:  882:
+    #####:  883:    if (reloc_target != NULL)
+        -:  884:    {
+    #####:  885:      assert(reloc_target >= page->address);
+    #####:  886:      assert(reloc_target < page->address + page->used);
+        -:  887:
+    #####:  888:      *reloc_address = reloc_target - \
+    #####:  889:                       page->address + \
+    #####:  890:                       new_page->address;
+        -:  891:    }
+        -:  892:
+    #####:  893:    reloc = reloc->next;
+        -:  894:  }
+        -:  895:
+    #####:  896:  *duplicated = new_arena;
+        -:  897:
+    #####:  898:  return ERROR_SUCCESS;
+        -:  899:}
+        -:  900:
+        -:  901:
+        -:  902://
+        -:  903:// yr_arena_load_stream
+        -:  904://
+        -:  905:// Loads an arena from a stream. The resulting arena is not relocatable, which
+        -:  906:// implies that the arena can't be duplicated with yr_arena_duplicate nor
+        -:  907:// saved with yr_arena_save_stream.
+        -:  908://
+        -:  909:// Args:
+        -:  910://    YR_STREAM* stream  - Pointer to stream object
+        -:  911://    YR_ARENA**         - Address where a pointer to the loaded arena
+        -:  912://                         will be returned
+        -:  913://
+        -:  914:// Returns:
+        -:  915://    ERROR_SUCCESS if successful, appropriate error code otherwise.
+        -:  916://
+        -:  917:
+    #####:  918:int yr_arena_load_stream(
+        -:  919:    YR_STREAM* stream,
+        -:  920:    YR_ARENA** arena)
+        -:  921:{
+        -:  922:  YR_ARENA_PAGE* page;
+        -:  923:  YR_ARENA* new_arena;
+        -:  924:  ARENA_FILE_HEADER header;
+        -:  925:
+        -:  926:  uint32_t real_hash;
+        -:  927:  uint32_t file_hash;
+        -:  928:  uint32_t reloc_offset;
+        -:  929:  uint8_t** reloc_address;
+        -:  930:  uint8_t* reloc_target;
+        -:  931:  uint32_t max_reloc_offset;
+        -:  932:
+        -:  933:  int result;
+        -:  934:
+    #####:  935:  if (yr_stream_read(&header, sizeof(header), 1, stream) != 1)
+    #####:  936:    return ERROR_INVALID_FILE;
+        -:  937:
+    #####:  938:  if (header.magic[0] != 'Y' ||
+    #####:  939:      header.magic[1] != 'A' ||
+    #####:  940:      header.magic[2] != 'R' ||
+    #####:  941:      header.magic[3] != 'A')
+        -:  942:  {
+    #####:  943:    return ERROR_INVALID_FILE;
+        -:  944:  }
+        -:  945:
+    #####:  946:  if (header.size < 2048)       // compiled rules are always larger than 2KB
+    #####:  947:    return ERROR_CORRUPT_FILE;
+        -:  948:
+    #####:  949:  if (header.version != ARENA_FILE_VERSION)
+    #####:  950:    return ERROR_UNSUPPORTED_FILE_VERSION;
+        -:  951:
+    #####:  952:  real_hash = yr_hash(0, &header, sizeof(header));
+        -:  953:
+    #####:  954:  result = yr_arena_create(header.size, ARENA_FLAGS_COALESCED, &new_arena);
+        -:  955:
+    #####:  956:  if (result != ERROR_SUCCESS)
+    #####:  957:    return result;
+        -:  958:
+    #####:  959:  page = new_arena->current_page;
+        -:  960:
+    #####:  961:  if (yr_stream_read(page->address, header.size, 1, stream) != 1)
+        -:  962:  {
+    #####:  963:    yr_arena_destroy(new_arena);
+    #####:  964:    return ERROR_CORRUPT_FILE;
+        -:  965:  }
+        -:  966:
+    #####:  967:  page->used = header.size;
+        -:  968:
+    #####:  969:  real_hash = yr_hash(real_hash, page->address, page->used);
+        -:  970:
+    #####:  971:  if (yr_stream_read(&reloc_offset, sizeof(reloc_offset), 1, stream) != 1)
+        -:  972:  {
+    #####:  973:    yr_arena_destroy(new_arena);
+    #####:  974:    return ERROR_CORRUPT_FILE;
+        -:  975:  }
+        -:  976:
+    #####:  977:  max_reloc_offset = header.size - sizeof(uint8_t*);
+        -:  978:
+    #####:  979:  while (reloc_offset != 0xFFFFFFFF)
+        -:  980:  {
+    #####:  981:    if (reloc_offset > max_reloc_offset)
+        -:  982:    {
+    #####:  983:      yr_arena_destroy(new_arena);
+    #####:  984:      return ERROR_CORRUPT_FILE;
+        -:  985:    }
+        -:  986:
+        -:  987:    //yr_arena_make_ptr_relocatable(new_arena, page->address, reloc_offset, EOL);
+        -:  988:
+    #####:  989:    reloc_address = (uint8_t**) (page->address + reloc_offset);
+    #####:  990:    reloc_target = *reloc_address;
+        -:  991:
+    #####:  992:    if (reloc_target == (uint8_t*) (size_t) 0xFFFABADA)
+        -:  993:    {
+    #####:  994:      *reloc_address = 0;
+        -:  995:    }
+    #####:  996:    else if (reloc_target < (uint8_t*) (size_t) max_reloc_offset)
+        -:  997:    {
+    #####:  998:      *reloc_address += (size_t) page->address;
+        -:  999:    }
+        -: 1000:    else
+        -: 1001:    {
+    #####: 1002:      yr_arena_destroy(new_arena);
+    #####: 1003:      return ERROR_CORRUPT_FILE;
+        -: 1004:    }
+        -: 1005:
+    #####: 1006:    if (yr_stream_read(&reloc_offset, sizeof(reloc_offset), 1, stream) != 1)
+        -: 1007:    {
+    #####: 1008:      yr_arena_destroy(new_arena);
+    #####: 1009:      return ERROR_CORRUPT_FILE;
+        -: 1010:    }
+        -: 1011:  }
+        -: 1012:
+    #####: 1013:  if (yr_stream_read(&file_hash, sizeof(file_hash), 1, stream) != 1)
+        -: 1014:  {
+    #####: 1015:    yr_arena_destroy(new_arena);
+    #####: 1016:    return ERROR_CORRUPT_FILE;
+        -: 1017:  }
+        -: 1018:
+    #####: 1019:  if (file_hash != real_hash)
+        -: 1020:  {
+    #####: 1021:    yr_arena_destroy(new_arena);
+    #####: 1022:    return ERROR_CORRUPT_FILE;
+        -: 1023:  }
+        -: 1024:
+    #####: 1025:  *arena = new_arena;
+        -: 1026:
+    #####: 1027:  return ERROR_SUCCESS;
+        -: 1028:}
+        -: 1029:
+        -: 1030:
+        -: 1031://
+        -: 1032:// yr_arena_save_stream
+        -: 1033://
+        -: 1034:// Saves the arena into a stream. If the file exists its overwritten. This
+        -: 1035:// function requires the arena to be coalesced.
+        -: 1036://
+        -: 1037:// Args:
+        -: 1038://    YR_ARENA* arena         - Pointer to the arena.
+        -: 1039://    YR_STREAM* stream       - Pointer to stream object.
+        -: 1040://
+        -: 1041:// Returns:
+        -: 1042://    ERROR_SUCCESS if succeed or the corresponding error code otherwise.
+        -: 1043://
+        -: 1044:
+    #####: 1045:int yr_arena_save_stream(
+        -: 1046:    YR_ARENA* arena,
+        -: 1047:    YR_STREAM* stream)
+        -: 1048:{
+        -: 1049:  YR_ARENA_PAGE* page;
+        -: 1050:  YR_RELOC* reloc;
+        -: 1051:  ARENA_FILE_HEADER header;
+        -: 1052:
+    #####: 1053:  uint32_t end_marker = 0xFFFFFFFF;
+        -: 1054:  uint32_t file_hash;
+        -: 1055:  uint8_t** reloc_address;
+        -: 1056:  uint8_t* reloc_target;
+        -: 1057:
+        -: 1058:  // Only coalesced and relocatable arenas can be saved.
+    #####: 1059:  assert(arena->flags & ARENA_FLAGS_COALESCED);
+    #####: 1060:  assert(arena->flags & ARENA_FLAGS_RELOCATABLE);
+        -: 1061:
+    #####: 1062:  page = arena->page_list_head;
+    #####: 1063:  reloc = page->reloc_list_head;
+        -: 1064:
+        -: 1065:  // Convert pointers to offsets before saving.
+    #####: 1066:  while (reloc != NULL)
+        -: 1067:  {
+    #####: 1068:    reloc_address = (uint8_t**) (page->address + reloc->offset);
+    #####: 1069:    reloc_target = *reloc_address;
+        -: 1070:
+    #####: 1071:    if (reloc_target != NULL)
+        -: 1072:    {
+    #####: 1073:      assert(reloc_target >= page->address);
+    #####: 1074:      assert(reloc_target < page->address + page->used);
+    #####: 1075:      *reloc_address = (uint8_t*) (*reloc_address - page->address);
+        -: 1076:    }
+        -: 1077:    else
+        -: 1078:    {
+    #####: 1079:      *reloc_address = (uint8_t*) (size_t) 0xFFFABADA;
+        -: 1080:    }
+        -: 1081:
+    #####: 1082:    reloc = reloc->next;
+        -: 1083:  }
+        -: 1084:
+    #####: 1085:  assert(page->size < 0x80000000);  // 2GB
+        -: 1086:
+    #####: 1087:  header.magic[0] = 'Y';
+    #####: 1088:  header.magic[1] = 'A';
+    #####: 1089:  header.magic[2] = 'R';
+    #####: 1090:  header.magic[3] = 'A';
+    #####: 1091:  header.size = (int32_t) page->size;
+    #####: 1092:  header.version = ARENA_FILE_VERSION;
+        -: 1093:
+    #####: 1094:  if (yr_stream_write(&header, sizeof(header), 1, stream) != 1)
+    #####: 1095:    return ERROR_WRITING_FILE;
+        -: 1096:
+    #####: 1097:  if (yr_stream_write(page->address, header.size, 1, stream) != 1)
+    #####: 1098:    return ERROR_WRITING_FILE;
+        -: 1099:
+    #####: 1100:  file_hash = yr_hash(0, &header, sizeof(header));
+    #####: 1101:  file_hash = yr_hash(file_hash, page->address, page->used);
+        -: 1102:
+    #####: 1103:  reloc = page->reloc_list_head;
+        -: 1104:
+        -: 1105:  // Convert offsets back to pointers.
+    #####: 1106:  while (reloc != NULL)
+        -: 1107:  {
+    #####: 1108:    if (yr_stream_write(&reloc->offset, sizeof(reloc->offset), 1, stream) != 1)
+    #####: 1109:      return ERROR_WRITING_FILE;
+        -: 1110:
+    #####: 1111:    reloc_address = (uint8_t**) (page->address + reloc->offset);
+    #####: 1112:    reloc_target = *reloc_address;
+        -: 1113:
+    #####: 1114:    if (reloc_target != (void*) (size_t) 0xFFFABADA)
+    #####: 1115:      *reloc_address += (size_t) page->address;
+        -: 1116:    else
+    #####: 1117:      *reloc_address = 0;
+        -: 1118:
+    #####: 1119:    reloc = reloc->next;
+        -: 1120:  }
+        -: 1121:
+    #####: 1122:  if (yr_stream_write(&end_marker, sizeof(end_marker), 1, stream) != 1)
+    #####: 1123:    return ERROR_WRITING_FILE;
+        -: 1124:
+    #####: 1125:  if (yr_stream_write(&file_hash, sizeof(file_hash), 1, stream) != 1)
+    #####: 1126:    return ERROR_WRITING_FILE;
+        -: 1127:
+    #####: 1128:  return ERROR_SUCCESS;
+        -: 1129:}

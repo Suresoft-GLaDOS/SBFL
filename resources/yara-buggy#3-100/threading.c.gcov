@@ -1,0 +1,214 @@
+        -:    0:Source:threading.c
+        -:    0:Graph:/home/workspace/libyara/threading.gcno
+        -:    0:Data:/home/workspace/libyara/threading.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2016. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <yara/error.h>
+        -:   31:#include <yara/threading.h>
+        -:   32:
+        -:   33:#if defined(_WIN32) || defined(__CYGWIN__)
+        -:   34:
+        -:   35:YR_THREAD_ID yr_current_thread_id(void)
+        -:   36:{
+        -:   37:  return GetCurrentThreadId();
+        -:   38:}
+        -:   39:
+        -:   40:
+        -:   41:int yr_mutex_create(
+        -:   42:    YR_MUTEX* mutex)
+        -:   43:{
+        -:   44:  *mutex = CreateMutex(NULL, FALSE, NULL);
+        -:   45:
+        -:   46:  if (*mutex == NULL)
+        -:   47:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:   48:
+        -:   49:  return ERROR_SUCCESS;
+        -:   50:}
+        -:   51:
+        -:   52:
+        -:   53:int yr_mutex_destroy(
+        -:   54:    YR_MUTEX* mutex)
+        -:   55:{
+        -:   56:  if (CloseHandle(*mutex) == FALSE)
+        -:   57:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:   58:
+        -:   59:  return ERROR_SUCCESS;
+        -:   60:}
+        -:   61:
+        -:   62:
+        -:   63:int yr_mutex_lock(
+        -:   64:    YR_MUTEX* mutex)
+        -:   65:{
+        -:   66:  if (WaitForSingleObject(*mutex, INFINITE) == WAIT_FAILED)
+        -:   67:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:   68:
+        -:   69:  return ERROR_SUCCESS;
+        -:   70:}
+        -:   71:
+        -:   72:
+        -:   73:int yr_mutex_unlock(
+        -:   74:    YR_MUTEX* mutex)
+        -:   75:{
+        -:   76:  if (ReleaseMutex(*mutex) == FALSE)
+        -:   77:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:   78:
+        -:   79:  return ERROR_SUCCESS;
+        -:   80:}
+        -:   81:
+        -:   82:
+        -:   83:int yr_thread_storage_create(
+        -:   84:    YR_THREAD_STORAGE_KEY* storage)
+        -:   85:{
+        -:   86:  *storage = TlsAlloc();
+        -:   87:
+        -:   88:  if (*storage == TLS_OUT_OF_INDEXES)
+        -:   89:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:   90:
+        -:   91:  return ERROR_SUCCESS;
+        -:   92:}
+        -:   93:
+        -:   94:
+        -:   95:int yr_thread_storage_destroy(
+        -:   96:    YR_THREAD_STORAGE_KEY* storage)
+        -:   97:{
+        -:   98:  if (TlsFree(*storage) == FALSE)
+        -:   99:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  100:
+        -:  101:  return ERROR_SUCCESS;
+        -:  102:}
+        -:  103:
+        -:  104:
+        -:  105:int yr_thread_storage_set_value(
+        -:  106:    YR_THREAD_STORAGE_KEY* storage,
+        -:  107:    void* value)
+        -:  108:{
+        -:  109:  if (TlsSetValue(*storage, value) == FALSE)
+        -:  110:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  111:
+        -:  112:  return ERROR_SUCCESS;
+        -:  113:}
+        -:  114:
+        -:  115:
+        -:  116:void* yr_thread_storage_get_value(
+        -:  117:    YR_THREAD_STORAGE_KEY* storage)
+        -:  118:{
+        -:  119:  return TlsGetValue(*storage);
+        -:  120:}
+        -:  121:
+        -:  122:
+        -:  123:#else  // POSIX implementation
+        -:  124:
+        -:  125:
+    #####:  126:YR_THREAD_ID yr_current_thread_id(void)
+        -:  127:{
+    #####:  128:  return pthread_self();
+        -:  129:}
+        -:  130:
+        -:  131:
+    #####:  132:int yr_mutex_create(
+        -:  133:    YR_MUTEX* mutex)
+        -:  134:{
+    #####:  135:  if (pthread_mutex_init(mutex, NULL) != 0)
+    #####:  136:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  137:
+    #####:  138:  return ERROR_SUCCESS;
+        -:  139:}
+        -:  140:
+        -:  141:
+    #####:  142:int yr_mutex_destroy(
+        -:  143:    YR_MUTEX* mutex)
+        -:  144:{
+    #####:  145:  if (pthread_mutex_destroy(mutex) != 0)
+    #####:  146:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  147:
+    #####:  148:  return ERROR_SUCCESS;
+        -:  149:}
+        -:  150:
+        -:  151:
+    #####:  152:int yr_mutex_lock(
+        -:  153:    YR_MUTEX* mutex)
+        -:  154:{
+    #####:  155:  if (pthread_mutex_lock(mutex) != 0)
+    #####:  156:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  157:
+    #####:  158:  return ERROR_SUCCESS;
+        -:  159:}
+        -:  160:
+        -:  161:
+    #####:  162:int yr_mutex_unlock(
+        -:  163:    YR_MUTEX* mutex)
+        -:  164:{
+    #####:  165:  if (pthread_mutex_unlock(mutex) != 0)
+    #####:  166:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  167:
+    #####:  168:  return ERROR_SUCCESS;
+        -:  169:}
+        -:  170:
+        -:  171:
+       12:  172:int yr_thread_storage_create(
+        -:  173:    YR_THREAD_STORAGE_KEY* storage)
+        -:  174:{
+       12:  175:  if (pthread_key_create(storage, NULL) != 0)
+    #####:  176:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  177:
+       12:  178:  return ERROR_SUCCESS;
+        -:  179:}
+        -:  180:
+        -:  181:
+        8:  182:int yr_thread_storage_destroy(
+        -:  183:    YR_THREAD_STORAGE_KEY* storage)
+        -:  184:{
+        8:  185:  if (pthread_key_delete(*storage) != 0)
+    #####:  186:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  187:
+        8:  188:  return ERROR_SUCCESS;
+        -:  189:}
+        -:  190:
+        -:  191:
+        1:  192:int yr_thread_storage_set_value(
+        -:  193:    YR_THREAD_STORAGE_KEY* storage,
+        -:  194:    void* value)
+        -:  195:{
+        1:  196:  if (pthread_setspecific(*storage, value) != 0)
+    #####:  197:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:  198:
+        1:  199:  return ERROR_SUCCESS;
+        -:  200:}
+        -:  201:
+        -:  202:
+    #####:  203:void* yr_thread_storage_get_value(
+        -:  204:    YR_THREAD_STORAGE_KEY* storage)
+        -:  205:{
+    #####:  206:  return pthread_getspecific(*storage);
+        -:  207:}
+        -:  208:
+        -:  209:#endif

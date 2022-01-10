@@ -1,0 +1,120 @@
+        -:    0:Source:bitmask.c
+        -:    0:Graph:/home/workspace/libyara/bitmask.gcno
+        -:    0:Data:/home/workspace/libyara/bitmask.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2018. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <assert.h>
+        -:   31:
+        -:   32:#include <yara/utils.h>
+        -:   33:#include <yara/bitmask.h>
+        -:   34:
+        -:   35://
+        -:   36:// yr_bitmask_find_non_colliding_offset
+        -:   37://
+        -:   38:// Finds the smaller offset within bitmask A where bitmask B can be accommodated
+        -:   39:// without bit collisions. A collision occurs when bots bitmasks have a bit set
+        -:   40:// to 1 at the same offset. This function assumes that the first bit in B is 1
+        -:   41:// and do optimizations that rely on that.
+        -:   42://
+        -:   43:// The function also receives a pointer to an uint32_t where the function stores
+        -:   44:// a value that is used for speeding-up subsequent searches over the same
+        -:   45:// bitmask A. When called for the first time with some bitmask A, the pointer
+        -:   46:// must point to a zero-initialized uint32_t. In the next call the function uses
+        -:   47:// the previously stored value for skiping over a portion of the A bitmask and
+        -:   48:// updates the value.
+        -:   49://
+        -:   50:// Args:
+        -:   51://    YR_BITMASK* a      - Bitmask A
+        -:   52://    YR_BITMASK* b      - Bitmask B
+        -:   53://    uint32_t len_a     - Length of bitmask A in bits
+        -:   54://    uint32_t len_b     - Length of bitmask B in bits
+        -:   55://    uint32_t* off_a    - Address of an uint32_t indicating the offset within
+        -:   56://                         bitmask A where to start searching. In the first call
+        -:   57://                         to it must point to a 0 value. This function updates
+        -:   58://                         the value to use it in subsequent calls.
+        -:   59:// Returns:
+        -:   60://    The smaller offset within bitmask A where bitmask B can be put.
+        -:   61://
+        -:   62:
+        6:   63:uint32_t yr_bitmask_find_non_colliding_offset(
+        -:   64:    YR_BITMASK* a,
+        -:   65:    YR_BITMASK* b,
+        -:   66:    uint32_t len_a,
+        -:   67:    uint32_t len_b,
+        -:   68:    uint32_t* off_a)
+        -:   69:{
+        -:   70:  uint32_t i, j, k;
+        -:   71:
+        -:   72:  // Ensure that the first bit of bitmask B is set, as this function does some
+        -:   73:  // optimizations that rely on that.
+        6:   74:  assert(yr_bitmask_isset(b, 0));
+        -:   75:
+        -:   76:  // Skip all slots that are filled with 1s. It's safe to do that because the
+        -:   77:  // first bit of B is 1, so we won't be able to accommodate B at any offset
+        -:   78:  // within such slots.
+       12:   79:  for (i = *off_a / YR_BITMASK_SLOT_BITS;
+       12:   80:       i <= len_a / YR_BITMASK_SLOT_BITS && a[i] == -1L;
+    #####:   81:       i++);
+        -:   82:
+        6:   83:  *off_a = i;
+        -:   84:
+        6:   85:  for (; i <= len_a / YR_BITMASK_SLOT_BITS; i++)
+        -:   86:  {
+        -:   87:    // The slot is filled with 1s, we can safely skip it.
+        6:   88:    if (a[i] == -1L)
+    #####:   89:      continue;
+        -:   90:
+       23:   91:    for (j = 0; j <= yr_min(len_a, YR_BITMASK_SLOT_BITS - 1); j++)
+        -:   92:    {
+       23:   93:      bool found = true;
+        -:   94:
+       29:   95:      for (k = 0; k <= len_b / YR_BITMASK_SLOT_BITS; k++)
+        -:   96:      {
+       23:   97:        YR_BITMASK m = b[k] << j;
+        -:   98:
+       23:   99:        if (j > 0 && k > 0)
+    #####:  100:          m |= b[k - 1] >> (YR_BITMASK_SLOT_BITS - j);
+        -:  101:
+       23:  102:        if ((i + k <= len_a / YR_BITMASK_SLOT_BITS) && (m & a[i + k]) != 0)
+        -:  103:        {
+       17:  104:          found = false;
+       17:  105:          break ;
+        -:  106:        }
+        -:  107:      }
+        -:  108:
+       23:  109:      if (found)
+        6:  110:        return i * YR_BITMASK_SLOT_BITS + j;
+        -:  111:    }
+        -:  112:  }
+        -:  113:
+    #####:  114:  return len_a;
+        -:  115:}

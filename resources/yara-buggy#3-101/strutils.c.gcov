@@ -1,0 +1,257 @@
+        -:    0:Source:strutils.c
+        -:    0:Graph:/home/workspace/libyara/strutils.gcno
+        -:    0:Data:/home/workspace/libyara/strutils.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2007-2014. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <stdio.h>
+        -:   31:#include <string.h>
+        -:   32:
+        -:   33:#include <yara/strutils.h>
+        -:   34:
+        7:   35:uint64_t xtoi(
+        -:   36:    const char* hexstr)
+        -:   37:{
+        -:   38:  size_t i;
+        7:   39:  size_t l = strlen(hexstr);
+        -:   40:
+        7:   41:  uint64_t r = 0;
+        -:   42:
+       21:   43:  for (i = 0; i < l; i++)
+        -:   44:  {
+       14:   45:    switch (hexstr[i])
+        -:   46:    {
+       14:   47:      case '0':
+        -:   48:      case '1':
+        -:   49:      case '2':
+        -:   50:      case '3':
+        -:   51:      case '4':
+        -:   52:      case '5':
+        -:   53:      case '6':
+        -:   54:      case '7':
+        -:   55:      case '8':
+        -:   56:      case '9':
+       14:   57:        r |= ((uint64_t)(hexstr[i] - '0')) << ((l - i - 1) * 4);
+       14:   58:        break;
+    #####:   59:      case 'a':
+        -:   60:      case 'b':
+        -:   61:      case 'c':
+        -:   62:      case 'd':
+        -:   63:      case 'e':
+        -:   64:      case 'f':
+    #####:   65:        r |= ((uint64_t)(hexstr[i] - 'a' + 10)) << ((l - i - 1) * 4);
+    #####:   66:        break;
+    #####:   67:      case 'A':
+        -:   68:      case 'B':
+        -:   69:      case 'C':
+        -:   70:      case 'D':
+        -:   71:      case 'E':
+        -:   72:      case 'F':
+    #####:   73:        r |= ((uint64_t)(hexstr[i] - 'A' + 10)) << ((l - i - 1) * 4);
+    #####:   74:        break;
+    #####:   75:      default:
+    #####:   76:        i = l;  // force loop exit
+        -:   77:    }
+        -:   78:  }
+        -:   79:
+        7:   80:  return r;
+        -:   81:}
+        -:   82:
+        -:   83:/*
+        -:   84:
+        -:   85:strlcpy and strlcat are defined in FreeBSD and OpenBSD,
+        -:   86:the following implementations were taken from OpenBSD.
+        -:   87:
+        -:   88:*/
+        -:   89:
+        -:   90:#if !HAVE_STRLCPY && !defined(strlcpy)
+        -:   91:
+    #####:   92:size_t strlcpy(
+        -:   93:    char* dst,
+        -:   94:    const char* src,
+        -:   95:    size_t size)
+        -:   96:{
+    #####:   97:  register char* d = dst;
+    #####:   98:  register const char* s = src;
+    #####:   99:  register size_t n = size;
+        -:  100:
+        -:  101:  // Copy as many bytes as will fit
+        -:  102:
+    #####:  103:  if (n != 0 && --n != 0)
+        -:  104:  {
+        -:  105:    do
+        -:  106:    {
+    #####:  107:      if ((*d++ = *s++) == 0)
+    #####:  108:        break;
+        -:  109:
+    #####:  110:    } while (--n != 0);
+        -:  111:  }
+        -:  112:
+        -:  113:  // Not enough room in dst, add NUL and traverse rest of src
+        -:  114:
+    #####:  115:  if (n == 0)
+        -:  116:  {
+    #####:  117:    if (size != 0)
+    #####:  118:      *d = '\0';    // NULL-terminate dst
+        -:  119:
+    #####:  120:    while (*s++);
+        -:  121:  }
+        -:  122:
+    #####:  123:  return (s - src - 1);  // count does not include NULL
+        -:  124:}
+        -:  125:
+        -:  126:#endif
+        -:  127:
+        -:  128:
+        -:  129:#if !HAVE_STRLCAT && !defined(strlcat)
+        -:  130:
+    #####:  131:size_t strlcat(
+        -:  132:    char* dst,
+        -:  133:    const char* src,
+        -:  134:    size_t size)
+        -:  135:{
+    #####:  136:  register char* d = dst;
+    #####:  137:  register const char* s = src;
+    #####:  138:  register size_t n = size;
+        -:  139:  size_t dlen;
+        -:  140:
+        -:  141:  // Find the end of dst and adjust bytes left but don't go past end
+        -:  142:
+    #####:  143:  while (n-- != 0 && *d != '\0') d++;
+        -:  144:
+    #####:  145:  dlen = d - dst;
+    #####:  146:  n = size - dlen;
+        -:  147:
+    #####:  148:  if (n == 0)
+    #####:  149:    return(dlen + strlen(s));
+        -:  150:
+    #####:  151:  while (*s != '\0')
+        -:  152:  {
+    #####:  153:    if (n != 1)
+        -:  154:    {
+    #####:  155:      *d++ = *s;
+    #####:  156:      n--;
+        -:  157:    }
+    #####:  158:    s++;
+        -:  159:  }
+        -:  160:
+    #####:  161:  *d = '\0';
+        -:  162:
+    #####:  163:  return (dlen + (s - src));  // count does not include NULL
+        -:  164:}
+        -:  165:
+        -:  166:#endif
+        -:  167:
+        -:  168:
+    #####:  169:int strnlen_w(
+        -:  170:    const char* w_str)
+        -:  171:{
+    #####:  172:  int len = 0;
+        -:  173:
+    #####:  174:  while (w_str[0] || w_str[1])
+        -:  175:  {
+    #####:  176:    w_str += 2;
+    #####:  177:    len += 1;
+        -:  178:  }
+        -:  179:
+    #####:  180:  return len;
+        -:  181:}
+        -:  182:
+        -:  183:
+    #####:  184:int strcmp_w(
+        -:  185:    const char* w_str,
+        -:  186:    const char* str)
+        -:  187:{
+    #####:  188:  while (*str != 0 && w_str[0] == *str && w_str[1] == 0)
+        -:  189:  {
+    #####:  190:    w_str += 2;
+    #####:  191:    str += 1;
+        -:  192:  }
+        -:  193:
+        -:  194:  // Higher-order byte of wide char non-zero? -> w_str is larger than str
+        -:  195:
+    #####:  196:  if (w_str[1] != 0)
+    #####:  197:    return 1;
+        -:  198:
+    #####:  199:  return w_str[0] - *str;
+        -:  200:}
+        -:  201:
+        -:  202:
+    #####:  203:size_t strlcpy_w(
+        -:  204:    char* dst,
+        -:  205:    const char* w_src,
+        -:  206:    size_t n)
+        -:  207:{
+    #####:  208:  register char* d = dst;
+    #####:  209:  register const char* s = w_src;
+        -:  210:
+    #####:  211:  while (n > 1 && *s != 0)
+        -:  212:  {
+    #####:  213:    *d = *s;
+    #####:  214:    d += 1;
+    #####:  215:    n -= 1;
+    #####:  216:    s += 2;
+        -:  217:  }
+        -:  218:
+    #####:  219:  while (*s) s += 2;
+        -:  220:
+    #####:  221:  *d = '\0';
+        -:  222:
+    #####:  223:  return (s - w_src) / 2;
+        -:  224:}
+        -:  225:
+        -:  226:
+        -:  227:#if !HAVE_MEMMEM && !defined(memmem)
+        -:  228:void* memmem(
+        -:  229:    const void *haystack,
+        -:  230:    size_t haystack_size,
+        -:  231:    const void *needle,
+        -:  232:    size_t needle_size)
+        -:  233:{
+        -:  234:  char *sp = (char *) haystack;
+        -:  235:  char *pp = (char *) needle;
+        -:  236:  char *eos = sp + haystack_size - needle_size;
+        -:  237:
+        -:  238:  if (haystack == NULL || haystack_size == 0 ||
+        -:  239:      needle == NULL || needle_size == 0)
+        -:  240:    return NULL;
+        -:  241:
+        -:  242:  while (sp <= eos)
+        -:  243:  {
+        -:  244:    if (*sp == *pp && memcmp(sp, pp, needle_size) == 0)
+        -:  245:      return sp;
+        -:  246:
+        -:  247:    sp++;
+        -:  248:  }
+        -:  249:
+        -:  250:  return NULL;
+        -:  251:}
+        -:  252:#endif
