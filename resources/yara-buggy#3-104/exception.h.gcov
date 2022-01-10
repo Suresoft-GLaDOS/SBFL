@@ -1,0 +1,178 @@
+        -:    0:Source:exception.h
+        -:    0:Graph:/home/workspace/libyara/scanner.gcno
+        -:    0:Data:/home/workspace/libyara/scanner.gcda
+        -:    0:Runs:7
+        -:    0:Programs:7
+        -:    1:/*
+        -:    2:Copyright (c) 2015. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#ifndef YR_EXCEPTION_H
+        -:   31:#define YR_EXCEPTION_H
+        -:   32:
+        -:   33:#include <assert.h>
+        -:   34:
+        -:   35:#if _WIN32 || __CYGWIN__
+        -:   36:
+        -:   37:#include <windows.h>
+        -:   38:
+        -:   39:// If compiling with Microsoft's compiler use structered exception handling.
+        -:   40:
+        -:   41:#ifdef _MSC_VER
+        -:   42:
+        -:   43:#include <excpt.h>
+        -:   44:
+        -:   45:static LONG CALLBACK exception_handler(
+        -:   46:    PEXCEPTION_POINTERS ExceptionInfo)
+        -:   47:{
+        -:   48:  switch(ExceptionInfo->ExceptionRecord->ExceptionCode)
+        -:   49:  {
+        -:   50:    case EXCEPTION_IN_PAGE_ERROR:
+        -:   51:    case EXCEPTION_ACCESS_VIOLATION:
+        -:   52:      return EXCEPTION_EXECUTE_HANDLER;
+        -:   53:  }
+        -:   54:
+        -:   55:  return EXCEPTION_CONTINUE_SEARCH;
+        -:   56:}
+        -:   57:
+        -:   58:#define YR_TRYCATCH(_do_,_try_clause_,_catch_clause_)           \
+        -:   59:  do                                                            \
+        -:   60:  {                                                             \
+        -:   61:    if (_do_)                                                   \
+        -:   62:    {                                                           \
+        -:   63:      __try                                                     \
+        -:   64:      { _try_clause_ }                                          \
+        -:   65:      __except(exception_handler(GetExceptionInformation()))    \
+        -:   66:      { _catch_clause_ }                                        \
+        -:   67:    }                                                           \
+        -:   68:    else                                                        \
+        -:   69:    { _try_clause_ }                                            \
+        -:   70:  } while(0)
+        -:   71:
+        -:   72:#else
+        -:   73:
+        -:   74:// If not compiling with Microsoft's compiler use vectored exception handling.
+        -:   75:
+        -:   76:#include <setjmp.h>
+        -:   77:
+        -:   78:jmp_buf *exc_jmp_buf[YR_MAX_THREADS];
+        -:   79:
+        -:   80:static LONG CALLBACK exception_handler(
+        -:   81:    PEXCEPTION_POINTERS ExceptionInfo)
+        -:   82:{
+        -:   83:  int tidx = yr_get_tidx();
+        -:   84:
+        -:   85:  switch(ExceptionInfo->ExceptionRecord->ExceptionCode)
+        -:   86:  {
+        -:   87:    case EXCEPTION_IN_PAGE_ERROR:
+        -:   88:    case EXCEPTION_ACCESS_VIOLATION:
+        -:   89:      if (tidx != -1 && exc_jmp_buf[tidx] != NULL)
+        -:   90:        longjmp(*exc_jmp_buf[tidx], 1);
+        -:   91:  }
+        -:   92:
+        -:   93:  return EXCEPTION_CONTINUE_SEARCH;
+        -:   94:}
+        -:   95:
+        -:   96:#define YR_TRYCATCH(_do_,_try_clause_,_catch_clause_)                   \
+        -:   97:  do                                                                    \
+        -:   98:  {                                                                     \
+        -:   99:    if (_do_)                                                           \
+        -:  100:    {                                                                   \
+        -:  101:      jmp_buf jb;                                                       \
+        -:  102:      HANDLE exh = AddVectoredExceptionHandler(1, exception_handler);   \
+        -:  103:      int tidx = yr_get_tidx();                                         \
+        -:  104:      assert(tidx != -1);                                               \
+        -:  105:      exc_jmp_buf[tidx] = &jb;                                          \
+        -:  106:      if (setjmp(jb) == 0)                                              \
+        -:  107:        { _try_clause_ }                                                \
+        -:  108:      else                                                              \
+        -:  109:        { _catch_clause_ }                                              \
+        -:  110:      exc_jmp_buf[tidx] = NULL;                                         \
+        -:  111:      RemoveVectoredExceptionHandler(exh);                              \
+        -:  112:    }                                                                   \
+        -:  113:    else                                                                \
+        -:  114:    {                                                                   \
+        -:  115:      _try_clause_                                                      \
+        -:  116:    }                                                                   \
+        -:  117:  } while(0)
+        -:  118:
+        -:  119:#endif
+        -:  120:
+        -:  121:#else
+        -:  122:
+        -:  123:#include <setjmp.h>
+        -:  124:#include <signal.h>
+        -:  125:
+        -:  126:sigjmp_buf *exc_jmp_buf[YR_MAX_THREADS];
+        -:  127:
+    #####:  128:static void exception_handler(int sig) {
+    #####:  129:  if (sig == SIGBUS || sig == SIGSEGV)
+        -:  130:  {
+    #####:  131:    int tidx = yr_get_tidx();
+        -:  132:
+    #####:  133:    if (tidx != -1 && exc_jmp_buf[tidx] != NULL)
+    #####:  134:      siglongjmp(*exc_jmp_buf[tidx], 1);
+        -:  135:  }
+    #####:  136:}
+        -:  137:
+        -:  138:typedef struct sigaction sa;
+        -:  139:
+        -:  140:#define YR_TRYCATCH(_do_,_try_clause_, _catch_clause_)          \
+        -:  141:  do                                                            \
+        -:  142:  {                                                             \
+        -:  143:    if (_do_)                                                   \
+        -:  144:    {                                                           \
+        -:  145:      struct sigaction old_sigbus_act;                          \
+        -:  146:      struct sigaction old_sigsegv_act;                         \
+        -:  147:      struct sigaction act;                                     \
+        -:  148:      act.sa_handler = exception_handler;                       \
+        -:  149:      act.sa_flags = 0; /* SA_ONSTACK? */                       \
+        -:  150:      sigfillset(&act.sa_mask);                                 \
+        -:  151:      sigaction(SIGBUS, &act, &old_sigbus_act);                 \
+        -:  152:      sigaction(SIGSEGV, &act, &old_sigsegv_act);               \
+        -:  153:      int tidx = yr_get_tidx();                                 \
+        -:  154:      assert(tidx != -1);                                       \
+        -:  155:      sigjmp_buf jb;                                            \
+        -:  156:      exc_jmp_buf[tidx] = &jb;                                  \
+        -:  157:      if (sigsetjmp(jb, 1) == 0)                                \
+        -:  158:        { _try_clause_ }                                        \
+        -:  159:      else                                                      \
+        -:  160:        { _catch_clause_ }                                      \
+        -:  161:      exc_jmp_buf[tidx] = NULL;                                 \
+        -:  162:      sigaction(SIGBUS, &old_sigbus_act, NULL);                 \
+        -:  163:      sigaction(SIGSEGV, &old_sigsegv_act, NULL);               \
+        -:  164:    }                                                           \
+        -:  165:    else                                                        \
+        -:  166:    {                                                           \
+        -:  167:      _try_clause_                                              \
+        -:  168:    }                                                           \
+        -:  169:  } while (0)
+        -:  170:
+        -:  171:#endif
+        -:  172:
+        -:  173:#endif

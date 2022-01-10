@@ -1,0 +1,2170 @@
+        -:    0:Source:grammar.y
+        -:    0:Graph:/home/workspace/libyara/grammar.gcno
+        -:    0:Data:/home/workspace/libyara/grammar.gcda
+        -:    0:Runs:7
+        -:    0:Programs:7
+        -:    1:/*
+        -:    2:Copyright (c) 2007-2013. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:%{
+        -:   31:
+        -:   32:
+        -:   33:#include <assert.h>
+        -:   34:#include <stdio.h>
+        -:   35:#include <string.h>
+        -:   36:#include <limits.h>
+        -:   37:#include <stdlib.h>
+        -:   38:#include <stddef.h>
+        -:   39:
+        -:   40:#include <yara/integers.h>
+        -:   41:#include <yara/utils.h>
+        -:   42:#include <yara/strutils.h>
+        -:   43:#include <yara/compiler.h>
+        -:   44:#include <yara/object.h>
+        -:   45:#include <yara/sizedstr.h>
+        -:   46:#include <yara/exec.h>
+        -:   47:#include <yara/error.h>
+        -:   48:#include <yara/mem.h>
+        -:   49:#include <yara/lexer.h>
+        -:   50:#include <yara/parser.h>
+        -:   51:
+        -:   52:#if defined(_MSC_VER)
+        -:   53:#define llabs _abs64
+        -:   54:#endif
+        -:   55:
+        -:   56:#define YYERROR_VERBOSE
+        -:   57:
+        -:   58:#define YYMALLOC yr_malloc
+        -:   59:#define YYFREE yr_free
+        -:   60:
+        -:   61:#define INTEGER_SET_ENUMERATION   1
+        -:   62:#define INTEGER_SET_RANGE         2
+        -:   63:
+        -:   64:#define FOR_EXPRESSION_ALL 1
+        -:   65:#define FOR_EXPRESSION_ANY 2
+        -:   66:
+        -:   67:#define fail_if_error(e) \
+        -:   68:    if (e != ERROR_SUCCESS) \
+        -:   69:    { \
+        -:   70:      compiler->last_error = e; \
+        -:   71:      yyerror(yyscanner, compiler, NULL); \
+        -:   72:      YYERROR; \
+        -:   73:    } \
+        -:   74:
+        -:   75:
+        -:   76:#define check_type_with_cleanup(expression, expected_type, op, cleanup) \
+        -:   77:    if (((expression.type) & (expected_type)) == 0) \
+        -:   78:    { \
+        -:   79:      switch(expression.type) \
+        -:   80:      { \
+        -:   81:        case EXPRESSION_TYPE_INTEGER: \
+        -:   82:          yr_compiler_set_error_extra_info( \
+        -:   83:              compiler, "wrong type \"integer\" for " op " operator"); \
+        -:   84:          break; \
+        -:   85:        case EXPRESSION_TYPE_FLOAT: \
+        -:   86:          yr_compiler_set_error_extra_info( \
+        -:   87:              compiler, "wrong type \"float\" for " op " operator"); \
+        -:   88:          break; \
+        -:   89:        case EXPRESSION_TYPE_STRING: \
+        -:   90:          yr_compiler_set_error_extra_info( \
+        -:   91:              compiler, "wrong type \"string\" for " op " operator"); \
+        -:   92:          break; \
+        -:   93:        case EXPRESSION_TYPE_BOOLEAN: \
+        -:   94:          yr_compiler_set_error_extra_info( \
+        -:   95:              compiler, "wrong type \"boolean\" for " op " operator"); \
+        -:   96:          break; \
+        -:   97:      } \
+        -:   98:      cleanup; \
+        -:   99:      compiler->last_error = ERROR_WRONG_TYPE; \
+        -:  100:      yyerror(yyscanner, compiler, NULL); \
+        -:  101:      YYERROR; \
+        -:  102:    }
+        -:  103:
+        -:  104:
+        -:  105:#define check_type(expression, expected_type, op) \
+        -:  106:    check_type_with_cleanup(expression, expected_type, op, )
+        -:  107:
+        -:  108:%}
+        -:  109:
+        -:  110:
+        -:  111:%expect 1   // expect 1 shift/reduce conflicts
+        -:  112:
+        -:  113:// Uncomment this line to print parsing information that can be useful to
+        -:  114:// debug YARA's grammar.
+        -:  115:
+        -:  116:// %debug
+        -:  117:
+        -:  118:%name-prefix "yara_yy"
+        -:  119:%pure-parser
+        -:  120:%parse-param {void *yyscanner}
+        -:  121:%parse-param {YR_COMPILER* compiler}
+        -:  122:%lex-param {yyscan_t yyscanner}
+        -:  123:%lex-param {YR_COMPILER* compiler}
+        -:  124:
+        -:  125:// Token that marks the end of the original file.
+        -:  126:%token _END_OF_FILE_  0                                "end of file"
+        -:  127:
+        -:  128:// Token that marks the end of included files, we can't use  _END_OF_FILE_
+        -:  129:// because bison stops parsing when it sees _END_OF_FILE_, we want to be
+        -:  130:// be able to identify the point where an included file ends, but continuing
+        -:  131:// parsing any content that follows.
+        -:  132:%token _END_OF_INCLUDED_FILE_                          "end of included file"
+        -:  133:
+        -:  134:%token _DOT_DOT_                                       ".."
+        -:  135:%token _RULE_                                          "<rule>"
+        -:  136:%token _PRIVATE_                                       "<private>"
+        -:  137:%token _GLOBAL_                                        "<global>"
+        -:  138:%token _META_                                          "<meta>"
+        -:  139:%token <string> _STRINGS_                              "<strings>"
+        -:  140:%token _CONDITION_                                     "<condition>"
+        -:  141:%token <c_string> _IDENTIFIER_                         "identifier"
+        -:  142:%token <c_string> _STRING_IDENTIFIER_                  "string identifier"
+        -:  143:%token <c_string> _STRING_COUNT_                       "string count"
+        -:  144:%token <c_string> _STRING_OFFSET_                      "string offset"
+        -:  145:%token <c_string> _STRING_LENGTH_                      "string length"
+        -:  146:%token <c_string> _STRING_IDENTIFIER_WITH_WILDCARD_
+        -:  147:    "string identifier with wildcard"
+        -:  148:%token <integer> _NUMBER_                              "integer number"
+        -:  149:%token <double_> _DOUBLE_                              "floating point number"
+        -:  150:%token <integer> _INTEGER_FUNCTION_                    "integer function"
+        -:  151:%token <sized_string> _TEXT_STRING_                    "text string"
+        -:  152:%token <sized_string> _HEX_STRING_                     "hex string"
+        -:  153:%token <sized_string> _REGEXP_                         "regular expression"
+        -:  154:%token _ASCII_                                         "<ascii>"
+        -:  155:%token _WIDE_                                          "<wide>"
+        -:  156:%token _XOR_                                           "<xor>"
+        -:  157:%token _NOCASE_                                        "<nocase>"
+        -:  158:%token _FULLWORD_                                      "<fullword>"
+        -:  159:%token _AT_                                            "<at>"
+        -:  160:%token _FILESIZE_                                      "<filesize>"
+        -:  161:%token _ENTRYPOINT_                                    "<entrypoint>"
+        -:  162:%token _ALL_                                           "<all>"
+        -:  163:%token _ANY_                                           "<any>"
+        -:  164:%token _IN_                                            "<in>"
+        -:  165:%token _OF_                                            "<of>"
+        -:  166:%token _FOR_                                           "<for>"
+        -:  167:%token _THEM_                                          "<them>"
+        -:  168:%token _MATCHES_                                       "<matches>"
+        -:  169:%token _CONTAINS_                                      "<contains>"
+        -:  170:%token _IMPORT_                                        "<import>"
+        -:  171:%token _TRUE_                                          "<true>"
+        -:  172:%token _FALSE_                                         "<false"
+        -:  173:%token _OR_                                            "<or>"
+        -:  174:%token _AND_                                           "<and>"
+        -:  175:%token _NOT_                                           "<not>"
+        -:  176:%token _EQ_                                            "=="
+        -:  177:%token _NEQ_                                           "!="
+        -:  178:%token _LT_                                            "<"
+        -:  179:%token _LE_                                            "<="
+        -:  180:%token _GT_                                            ">"
+        -:  181:%token _GE_                                            ">="
+        -:  182:%token _SHIFT_LEFT_                                    "<<"
+        -:  183:%token _SHIFT_RIGHT_                                   ">>"
+        -:  184:
+        -:  185:%left _OR_
+        -:  186:%left _AND_
+        -:  187:%left '|'
+        -:  188:%left '^'
+        -:  189:%left '&'
+        -:  190:%left _EQ_ _NEQ_
+        -:  191:%left _LT_ _LE_ _GT_ _GE_
+        -:  192:%left _SHIFT_LEFT_ _SHIFT_RIGHT_
+        -:  193:%left '+' '-'
+        -:  194:%left '*' '\\' '%'
+        -:  195:%right _NOT_ '~' UNARY_MINUS
+        -:  196:
+        -:  197:%type <rule>   rule
+        -:  198:
+        -:  199:%type <string> strings
+        -:  200:%type <string> string_declaration
+        -:  201:%type <string> string_declarations
+        -:  202:
+        -:  203:%type <meta> meta
+        -:  204:%type <meta> meta_declaration
+        -:  205:%type <meta> meta_declarations
+        -:  206:
+        -:  207:%type <c_string> tags
+        -:  208:%type <c_string> tag_list
+        -:  209:
+        -:  210:%type <integer> string_modifier
+        -:  211:%type <integer> string_modifiers
+        -:  212:
+        -:  213:%type <integer> integer_set
+        -:  214:
+        -:  215:%type <integer> for_expression
+        -:  216:
+        -:  217:%type <integer> rule_modifier
+        -:  218:%type <integer> rule_modifiers
+        -:  219:
+        -:  220:%type <expression> primary_expression
+        -:  221:%type <expression> boolean_expression
+        -:  222:%type <expression> expression
+        -:  223:%type <expression> identifier
+        -:  224:%type <expression> regexp
+        -:  225:
+        -:  226:%type <c_string> arguments
+        -:  227:%type <c_string> arguments_list
+        -:  228:
+    #####:  229:%destructor { yr_free($$); $$ = NULL; } _IDENTIFIER_
+    #####:  230:%destructor { yr_free($$); $$ = NULL; } _STRING_COUNT_
+    #####:  231:%destructor { yr_free($$); $$ = NULL; } _STRING_OFFSET_
+    #####:  232:%destructor { yr_free($$); $$ = NULL; } _STRING_LENGTH_
+    #####:  233:%destructor { yr_free($$); $$ = NULL; } _STRING_IDENTIFIER_
+    #####:  234:%destructor { yr_free($$); $$ = NULL; } _STRING_IDENTIFIER_WITH_WILDCARD_
+    #####:  235:%destructor { yr_free($$); $$ = NULL; } _TEXT_STRING_
+    #####:  236:%destructor { yr_free($$); $$ = NULL; } _HEX_STRING_
+    #####:  237:%destructor { yr_free($$); $$ = NULL; } _REGEXP_
+        -:  238:
+    #####:  239:%destructor { yr_free($$); $$ = NULL; } arguments
+    #####:  240:%destructor { yr_free($$); $$ = NULL; } arguments_list
+        -:  241:
+        -:  242:%union {
+        -:  243:  EXPRESSION      expression;
+        -:  244:  SIZED_STRING*   sized_string;
+        -:  245:  char*           c_string;
+        -:  246:  int64_t         integer;
+        -:  247:  double          double_;
+        -:  248:  YR_STRING*      string;
+        -:  249:  YR_META*        meta;
+        -:  250:  YR_RULE*        rule;
+        -:  251:}
+        -:  252:
+        -:  253:
+        -:  254:%%
+        -:  255:
+        -:  256:rules
+        -:  257:    : /* empty */
+        -:  258:    | rules rule
+        -:  259:    | rules import
+        -:  260:    | rules error rule      /* on error skip until next rule..*/
+        -:  261:    | rules error import    /* .. or import statement */
+        -:  262:    | rules error "include" /* .. or include statement */
+        -:  263:    | rules _END_OF_INCLUDED_FILE_
+        -:  264:      {
+    #####:  265:        _yr_compiler_pop_file_name(compiler);
+        -:  266:      }
+        -:  267:    ;
+        -:  268:
+        -:  269:
+        -:  270:import
+        -:  271:    : _IMPORT_ _TEXT_STRING_
+        -:  272:      {
+    #####:  273:        int result = yr_parser_reduce_import(yyscanner, $2);
+        -:  274:
+    #####:  275:        yr_free($2);
+        -:  276:
+    #####:  277:        fail_if_error(result);
+        -:  278:      }
+        -:  279:    ;
+        -:  280:
+        -:  281:
+        -:  282:rule
+        -:  283:    : rule_modifiers _RULE_ _IDENTIFIER_
+        -:  284:      {
+    #####:  285:        fail_if_error(yr_parser_reduce_rule_declaration_phase_1(
+        -:  286:            yyscanner, (int32_t) $1, $3, &$<rule>$));
+        -:  287:      }
+        -:  288:      tags '{' meta strings
+        -:  289:      {
+    #####:  290:        YR_RULE* rule = $<rule>4; // rule created in phase 1
+        -:  291:
+    #####:  292:        rule->tags = $5;
+    #####:  293:        rule->metas = $7;
+    #####:  294:        rule->strings = $8;
+        -:  295:      }
+        -:  296:      condition '}'
+        -:  297:      {
+    #####:  298:        int result = yr_parser_reduce_rule_declaration_phase_2(
+    #####:  299:            yyscanner, $<rule>4); // rule created in phase 1
+        -:  300:
+    #####:  301:        yr_free($3);
+        -:  302:
+    #####:  303:        fail_if_error(result);
+        -:  304:      }
+        -:  305:    ;
+        -:  306:
+        -:  307:
+        -:  308:meta
+        -:  309:    : /* empty */
+        -:  310:      {
+    #####:  311:        $$ = NULL;
+        -:  312:      }
+        -:  313:    | _META_ ':' meta_declarations
+        -:  314:      {
+        -:  315:        int result;
+        -:  316:
+        -:  317:        // Each rule have a list of meta-data info, consisting in a
+        -:  318:        // sequence of YR_META structures. The last YR_META structure does
+        -:  319:        // not represent a real meta-data, it's just a end-of-list marker
+        -:  320:        // identified by a specific type (META_TYPE_NULL). Here we
+        -:  321:        // write the end-of-list marker.
+        -:  322:
+        -:  323:        YR_META null_meta;
+        -:  324:
+    #####:  325:        memset(&null_meta, 0xFF, sizeof(YR_META));
+    #####:  326:        null_meta.type = META_TYPE_NULL;
+        -:  327:
+    #####:  328:        result = yr_arena_write_data(
+        -:  329:            compiler->metas_arena,
+        -:  330:            &null_meta,
+        -:  331:            sizeof(YR_META),
+        -:  332:            NULL);
+        -:  333:
+    #####:  334:        $$ = $3;
+        -:  335:
+    #####:  336:        fail_if_error(result);
+        -:  337:      }
+        -:  338:    ;
+        -:  339:
+        -:  340:
+        -:  341:strings
+        -:  342:    : /* empty */
+        -:  343:      {
+    #####:  344:        $$ = NULL;
+        -:  345:      }
+        -:  346:    | _STRINGS_ ':' string_declarations
+        -:  347:      {
+        -:  348:        // Each rule have a list of strings, consisting in a sequence
+        -:  349:        // of YR_STRING structures. The last YR_STRING structure does not
+        -:  350:        // represent a real string, it's just a end-of-list marker
+        -:  351:        // identified by a specific flag (STRING_FLAGS_NULL). Here we
+        -:  352:        // write the end-of-list marker.
+        -:  353:
+        -:  354:        YR_STRING null_string;
+        -:  355:
+    #####:  356:        memset(&null_string, 0xFF, sizeof(YR_STRING));
+    #####:  357:        null_string.g_flags = STRING_GFLAGS_NULL;
+        -:  358:
+    #####:  359:        fail_if_error(yr_arena_write_data(
+        -:  360:            compiler->strings_arena,
+        -:  361:            &null_string,
+        -:  362:            sizeof(YR_STRING),
+        -:  363:            NULL));
+        -:  364:
+    #####:  365:        $$ = $3;
+        -:  366:      }
+        -:  367:    ;
+        -:  368:
+        -:  369:
+        -:  370:condition
+        -:  371:    : _CONDITION_ ':' boolean_expression
+        -:  372:    ;
+        -:  373:
+        -:  374:
+        -:  375:rule_modifiers
+    #####:  376:    : /* empty */                      { $$ = 0;  }
+    #####:  377:    | rule_modifiers rule_modifier     { $$ = $1 | $2; }
+        -:  378:    ;
+        -:  379:
+        -:  380:
+        -:  381:rule_modifier
+    #####:  382:    : _PRIVATE_      { $$ = RULE_GFLAGS_PRIVATE; }
+    #####:  383:    | _GLOBAL_       { $$ = RULE_GFLAGS_GLOBAL; }
+        -:  384:    ;
+        -:  385:
+        -:  386:
+        -:  387:tags
+        -:  388:    : /* empty */
+        -:  389:      {
+    #####:  390:        $$ = NULL;
+        -:  391:      }
+        -:  392:    | ':' tag_list
+        -:  393:      {
+        -:  394:        // Tags list is represented in the arena as a sequence
+        -:  395:        // of null-terminated strings, the sequence ends with an
+        -:  396:        // additional null character. Here we write the ending null
+        -:  397:        //character. Example: tag1\0tag2\0tag3\0\0
+        -:  398:
+    #####:  399:        int result = yr_arena_write_string(
+    #####:  400:            yyget_extra(yyscanner)->sz_arena, "", NULL);
+        -:  401:
+    #####:  402:        fail_if_error(result);
+        -:  403:
+    #####:  404:        $$ = $2;
+        -:  405:      }
+        -:  406:    ;
+        -:  407:
+        -:  408:
+        -:  409:tag_list
+        -:  410:    : _IDENTIFIER_
+        -:  411:      {
+    #####:  412:        int result = yr_arena_write_string(
+    #####:  413:            yyget_extra(yyscanner)->sz_arena, $1, &$$);
+        -:  414:
+    #####:  415:        yr_free($1);
+        -:  416:
+    #####:  417:        fail_if_error(result);
+        -:  418:      }
+        -:  419:    | tag_list _IDENTIFIER_
+        -:  420:      {
+    #####:  421:        int result = ERROR_SUCCESS;
+        -:  422:
+    #####:  423:        char* tag_name = $1;
+    #####:  424:        size_t tag_length = tag_name != NULL ? strlen(tag_name) : 0;
+        -:  425:
+    #####:  426:        while (tag_length > 0)
+        -:  427:        {
+    #####:  428:          if (strcmp(tag_name, $2) == 0)
+        -:  429:          {
+    #####:  430:            yr_compiler_set_error_extra_info(compiler, tag_name);
+    #####:  431:            result = ERROR_DUPLICATED_TAG_IDENTIFIER;
+    #####:  432:            break;
+        -:  433:          }
+        -:  434:
+    #####:  435:          tag_name = (char*) yr_arena_next_address(
+    #####:  436:              yyget_extra(yyscanner)->sz_arena,
+        -:  437:              tag_name,
+        -:  438:              tag_length + 1);
+        -:  439:
+    #####:  440:          tag_length = tag_name != NULL ? strlen(tag_name) : 0;
+        -:  441:        }
+        -:  442:
+    #####:  443:        if (result == ERROR_SUCCESS)
+    #####:  444:          result = yr_arena_write_string(
+    #####:  445:              yyget_extra(yyscanner)->sz_arena, $2, NULL);
+        -:  446:
+    #####:  447:        yr_free($2);
+        -:  448:
+    #####:  449:        fail_if_error(result);
+        -:  450:
+    #####:  451:        $$ = $1;
+        -:  452:      }
+        -:  453:    ;
+        -:  454:
+        -:  455:
+        -:  456:
+        -:  457:meta_declarations
+    #####:  458:    : meta_declaration                    {  $$ = $1; }
+    #####:  459:    | meta_declarations meta_declaration  {  $$ = $1; }
+        -:  460:    ;
+        -:  461:
+        -:  462:
+        -:  463:meta_declaration
+        -:  464:    : _IDENTIFIER_ '=' _TEXT_STRING_
+        -:  465:      {
+    #####:  466:        SIZED_STRING* sized_string = $3;
+        -:  467:
+    #####:  468:        int result = yr_parser_reduce_meta_declaration(
+        -:  469:            yyscanner,
+        -:  470:            META_TYPE_STRING,
+    #####:  471:            $1,
+    #####:  472:            sized_string->c_string,
+        -:  473:            0,
+        -:  474:            &$$);
+        -:  475:
+    #####:  476:        yr_free($1);
+    #####:  477:        yr_free($3);
+        -:  478:
+    #####:  479:        fail_if_error(result);
+        -:  480:      }
+        -:  481:    | _IDENTIFIER_ '=' _NUMBER_
+        -:  482:      {
+    #####:  483:        int result = yr_parser_reduce_meta_declaration(
+        -:  484:            yyscanner,
+        -:  485:            META_TYPE_INTEGER,
+    #####:  486:            $1,
+        -:  487:            NULL,
+        -:  488:            $3,
+        -:  489:            &$$);
+        -:  490:
+    #####:  491:        yr_free($1);
+        -:  492:
+    #####:  493:        fail_if_error(result);
+        -:  494:      }
+        -:  495:    | _IDENTIFIER_ '=' '-' _NUMBER_
+        -:  496:      {
+    #####:  497:        int result = yr_parser_reduce_meta_declaration(
+        -:  498:            yyscanner,
+        -:  499:            META_TYPE_INTEGER,
+    #####:  500:            $1,
+        -:  501:            NULL,
+    #####:  502:            -$4,
+        -:  503:            &$$);
+        -:  504:
+    #####:  505:        yr_free($1);
+        -:  506:
+    #####:  507:        fail_if_error(result);
+        -:  508:      }
+        -:  509:    | _IDENTIFIER_ '=' _TRUE_
+        -:  510:      {
+    #####:  511:        int result = yr_parser_reduce_meta_declaration(
+        -:  512:            yyscanner,
+        -:  513:            META_TYPE_BOOLEAN,
+    #####:  514:            $1,
+        -:  515:            NULL,
+        -:  516:            true,
+        -:  517:            &$$);
+        -:  518:
+    #####:  519:        yr_free($1);
+        -:  520:
+    #####:  521:        fail_if_error(result);
+        -:  522:      }
+        -:  523:    | _IDENTIFIER_ '=' _FALSE_
+        -:  524:      {
+    #####:  525:        int result = yr_parser_reduce_meta_declaration(
+        -:  526:            yyscanner,
+        -:  527:            META_TYPE_BOOLEAN,
+    #####:  528:            $1,
+        -:  529:            NULL,
+        -:  530:            false,
+        -:  531:            &$$);
+        -:  532:
+    #####:  533:        yr_free($1);
+        -:  534:
+    #####:  535:        fail_if_error(result);
+        -:  536:      }
+        -:  537:    ;
+        -:  538:
+        -:  539:
+        -:  540:string_declarations
+    #####:  541:    : string_declaration                      { $$ = $1; }
+    #####:  542:    | string_declarations string_declaration  { $$ = $1; }
+        -:  543:    ;
+        -:  544:
+        -:  545:
+        -:  546:string_declaration
+        -:  547:    : _STRING_IDENTIFIER_ '='
+        -:  548:      {
+    #####:  549:        compiler->current_line = yyget_lineno(yyscanner);
+        -:  550:      }
+        -:  551:      _TEXT_STRING_ string_modifiers
+        -:  552:      {
+    #####:  553:        int result = yr_parser_reduce_string_declaration(
+    #####:  554:            yyscanner, (int32_t) $5, $1, $4, &$$);
+        -:  555:
+    #####:  556:        yr_free($1);
+    #####:  557:        yr_free($4);
+        -:  558:
+    #####:  559:        fail_if_error(result);
+    #####:  560:        compiler->current_line = 0;
+        -:  561:      }
+        -:  562:    | _STRING_IDENTIFIER_ '='
+        -:  563:      {
+    #####:  564:        compiler->current_line = yyget_lineno(yyscanner);
+        -:  565:      }
+        -:  566:      _REGEXP_ string_modifiers
+        -:  567:      {
+    #####:  568:        int result = yr_parser_reduce_string_declaration(
+    #####:  569:            yyscanner, (int32_t) $5 | STRING_GFLAGS_REGEXP, $1, $4, &$$);
+        -:  570:
+    #####:  571:        yr_free($1);
+    #####:  572:        yr_free($4);
+        -:  573:
+    #####:  574:        fail_if_error(result);
+        -:  575:
+    #####:  576:        compiler->current_line = 0;
+        -:  577:      }
+        -:  578:    | _STRING_IDENTIFIER_ '=' _HEX_STRING_
+        -:  579:      {
+    #####:  580:        int result = yr_parser_reduce_string_declaration(
+    #####:  581:            yyscanner, STRING_GFLAGS_HEXADECIMAL, $1, $3, &$$);
+        -:  582:
+    #####:  583:        yr_free($1);
+    #####:  584:        yr_free($3);
+        -:  585:
+    #####:  586:        fail_if_error(result);
+        -:  587:      }
+        -:  588:    ;
+        -:  589:
+        -:  590:
+        -:  591:string_modifiers
+    #####:  592:    : /* empty */                         { $$ = 0; }
+    #####:  593:    | string_modifiers string_modifier    { $$ = $1 | $2; }
+        -:  594:    ;
+        -:  595:
+        -:  596:
+        -:  597:string_modifier
+    #####:  598:    : _WIDE_        { $$ = STRING_GFLAGS_WIDE; }
+    #####:  599:    | _ASCII_       { $$ = STRING_GFLAGS_ASCII; }
+    #####:  600:    | _NOCASE_      { $$ = STRING_GFLAGS_NO_CASE; }
+    #####:  601:    | _FULLWORD_    { $$ = STRING_GFLAGS_FULL_WORD; }
+    #####:  602:    | _XOR_         { $$ = STRING_GFLAGS_XOR; }
+        -:  603:    ;
+        -:  604:
+        -:  605:
+        -:  606:identifier
+        -:  607:    : _IDENTIFIER_
+        -:  608:      {
+    #####:  609:        int result = ERROR_SUCCESS;
+    #####:  610:        int var_index = yr_parser_lookup_loop_variable(yyscanner, $1);
+        -:  611:
+    #####:  612:        if (var_index >= 0)
+        -:  613:        {
+    #####:  614:          result = yr_parser_emit_with_arg(
+        -:  615:              yyscanner,
+        -:  616:              OP_PUSH_M,
+    #####:  617:              LOOP_LOCAL_VARS * var_index,
+        -:  618:              NULL,
+        -:  619:              NULL);
+        -:  620:
+    #####:  621:          $$.type = EXPRESSION_TYPE_INTEGER;
+    #####:  622:          $$.value.integer = UNDEFINED;
+    #####:  623:          $$.identifier = compiler->loop_identifier[var_index];
+        -:  624:        }
+        -:  625:        else
+        -:  626:        {
+        -:  627:          // Search for identifier within the global namespace, where the
+        -:  628:          // externals variables reside.
+        -:  629:
+    #####:  630:          YR_OBJECT* object = (YR_OBJECT*) yr_hash_table_lookup(
+    #####:  631:              compiler->objects_table, $1, NULL);
+        -:  632:
+    #####:  633:          if (object == NULL)
+        -:  634:          {
+        -:  635:            // If not found, search within the current namespace.
+    #####:  636:            char* ns = compiler->current_namespace->name;
+        -:  637:
+    #####:  638:            object = (YR_OBJECT*) yr_hash_table_lookup(
+    #####:  639:                compiler->objects_table, $1, ns);
+        -:  640:          }
+        -:  641:
+    #####:  642:          if (object != NULL)
+        -:  643:          {
+        -:  644:            char* id;
+        -:  645:
+    #####:  646:            result = yr_arena_write_string(
+    #####:  647:                compiler->sz_arena, $1, &id);
+        -:  648:
+    #####:  649:            if (result == ERROR_SUCCESS)
+    #####:  650:              result = yr_parser_emit_with_arg_reloc(
+        -:  651:                  yyscanner,
+        -:  652:                  OP_OBJ_LOAD,
+        -:  653:                  id,
+        -:  654:                  NULL,
+        -:  655:                  NULL);
+        -:  656:
+    #####:  657:            $$.type = EXPRESSION_TYPE_OBJECT;
+    #####:  658:            $$.value.object = object;
+    #####:  659:            $$.identifier = object->identifier;
+        -:  660:          }
+        -:  661:          else
+        -:  662:          {
+    #####:  663:            YR_RULE* rule = (YR_RULE*) yr_hash_table_lookup(
+        -:  664:                compiler->rules_table,
+    #####:  665:                $1,
+    #####:  666:                compiler->current_namespace->name);
+        -:  667:
+    #####:  668:            if (rule != NULL)
+        -:  669:            {
+    #####:  670:              result = yr_parser_emit_with_arg_reloc(
+        -:  671:                  yyscanner,
+        -:  672:                  OP_PUSH_RULE,
+        -:  673:                  rule,
+        -:  674:                  NULL,
+        -:  675:                  NULL);
+        -:  676:
+    #####:  677:              $$.type = EXPRESSION_TYPE_BOOLEAN;
+    #####:  678:              $$.value.integer = UNDEFINED;
+    #####:  679:              $$.identifier = rule->identifier;
+        -:  680:            }
+        -:  681:            else
+        -:  682:            {
+    #####:  683:              yr_compiler_set_error_extra_info(compiler, $1);
+    #####:  684:              result = ERROR_UNDEFINED_IDENTIFIER;
+        -:  685:            }
+        -:  686:          }
+        -:  687:        }
+        -:  688:
+    #####:  689:        yr_free($1);
+        -:  690:
+    #####:  691:        fail_if_error(result);
+        -:  692:      }
+        -:  693:    | identifier '.' _IDENTIFIER_
+        -:  694:      {
+    #####:  695:        int result = ERROR_SUCCESS;
+    #####:  696:        YR_OBJECT* field = NULL;
+        -:  697:
+    #####:  698:        if ($1.type == EXPRESSION_TYPE_OBJECT &&
+    #####:  699:            $1.value.object->type == OBJECT_TYPE_STRUCTURE)
+        -:  700:        {
+    #####:  701:          field = yr_object_lookup_field($1.value.object, $3);
+        -:  702:
+    #####:  703:          if (field != NULL)
+        -:  704:          {
+        -:  705:            char* ident;
+        -:  706:
+    #####:  707:            result = yr_arena_write_string(
+    #####:  708:                compiler->sz_arena, $3, &ident);
+        -:  709:
+    #####:  710:            if (result == ERROR_SUCCESS)
+    #####:  711:              result = yr_parser_emit_with_arg_reloc(
+        -:  712:                  yyscanner,
+        -:  713:                  OP_OBJ_FIELD,
+        -:  714:                  ident,
+        -:  715:                  NULL,
+        -:  716:                  NULL);
+        -:  717:
+    #####:  718:            $$.type = EXPRESSION_TYPE_OBJECT;
+    #####:  719:            $$.value.object = field;
+    #####:  720:            $$.identifier = field->identifier;
+        -:  721:          }
+        -:  722:          else
+        -:  723:          {
+    #####:  724:            yr_compiler_set_error_extra_info(compiler, $3);
+    #####:  725:            result = ERROR_INVALID_FIELD_NAME;
+        -:  726:          }
+        -:  727:        }
+        -:  728:        else
+        -:  729:        {
+    #####:  730:          yr_compiler_set_error_extra_info(
+        -:  731:              compiler, $1.identifier);
+        -:  732:
+    #####:  733:          result = ERROR_NOT_A_STRUCTURE;
+        -:  734:        }
+        -:  735:
+    #####:  736:        yr_free($3);
+        -:  737:
+    #####:  738:        fail_if_error(result);
+        -:  739:      }
+        -:  740:    | identifier '[' primary_expression ']'
+        -:  741:      {
+    #####:  742:        int result = ERROR_SUCCESS;
+        -:  743:        YR_OBJECT_ARRAY* array;
+        -:  744:        YR_OBJECT_DICTIONARY* dict;
+        -:  745:
+    #####:  746:        if ($1.type == EXPRESSION_TYPE_OBJECT &&
+    #####:  747:            $1.value.object->type == OBJECT_TYPE_ARRAY)
+        -:  748:        {
+    #####:  749:          if ($3.type != EXPRESSION_TYPE_INTEGER)
+        -:  750:          {
+    #####:  751:            yr_compiler_set_error_extra_info(
+        -:  752:                compiler, "array indexes must be of integer type");
+    #####:  753:            result = ERROR_WRONG_TYPE;
+        -:  754:          }
+        -:  755:
+    #####:  756:          fail_if_error(result);
+        -:  757:
+    #####:  758:          result = yr_parser_emit(
+        -:  759:              yyscanner, OP_INDEX_ARRAY, NULL);
+        -:  760:
+    #####:  761:          array = object_as_array($1.value.object);
+        -:  762:
+    #####:  763:          $$.type = EXPRESSION_TYPE_OBJECT;
+    #####:  764:          $$.value.object = array->prototype_item;
+    #####:  765:          $$.identifier = array->identifier;
+        -:  766:        }
+    #####:  767:        else if ($1.type == EXPRESSION_TYPE_OBJECT &&
+    #####:  768:                 $1.value.object->type == OBJECT_TYPE_DICTIONARY)
+        -:  769:        {
+    #####:  770:          if ($3.type != EXPRESSION_TYPE_STRING)
+        -:  771:          {
+    #####:  772:            yr_compiler_set_error_extra_info(
+        -:  773:                compiler, "dictionary keys must be of string type");
+    #####:  774:            result = ERROR_WRONG_TYPE;
+        -:  775:          }
+        -:  776:
+    #####:  777:          fail_if_error(result);
+        -:  778:
+    #####:  779:          result = yr_parser_emit(
+        -:  780:              yyscanner, OP_LOOKUP_DICT, NULL);
+        -:  781:
+    #####:  782:          dict = object_as_dictionary($1.value.object);
+        -:  783:
+    #####:  784:          $$.type = EXPRESSION_TYPE_OBJECT;
+    #####:  785:          $$.value.object = dict->prototype_item;
+    #####:  786:          $$.identifier = dict->identifier;
+        -:  787:        }
+        -:  788:        else
+        -:  789:        {
+    #####:  790:          yr_compiler_set_error_extra_info(
+        -:  791:              compiler, $1.identifier);
+        -:  792:
+    #####:  793:          result = ERROR_NOT_INDEXABLE;
+        -:  794:        }
+        -:  795:
+    #####:  796:        fail_if_error(result);
+        -:  797:      }
+        -:  798:
+        -:  799:    | identifier '(' arguments ')'
+        -:  800:      {
+    #####:  801:        int result = ERROR_SUCCESS;
+        -:  802:        YR_OBJECT_FUNCTION* function;
+        -:  803:        char* args_fmt;
+        -:  804:
+    #####:  805:        if ($1.type == EXPRESSION_TYPE_OBJECT &&
+    #####:  806:            $1.value.object->type == OBJECT_TYPE_FUNCTION)
+        -:  807:        {
+    #####:  808:          result = yr_parser_check_types(
+    #####:  809:              compiler, object_as_function($1.value.object), $3);
+        -:  810:
+    #####:  811:          if (result == ERROR_SUCCESS)
+    #####:  812:            result = yr_arena_write_string(
+    #####:  813:                compiler->sz_arena, $3, &args_fmt);
+        -:  814:
+    #####:  815:          if (result == ERROR_SUCCESS)
+    #####:  816:            result = yr_parser_emit_with_arg_reloc(
+        -:  817:                yyscanner,
+        -:  818:                OP_CALL,
+        -:  819:                args_fmt,
+        -:  820:                NULL,
+        -:  821:                NULL);
+        -:  822:
+    #####:  823:          function = object_as_function($1.value.object);
+        -:  824:
+    #####:  825:          $$.type = EXPRESSION_TYPE_OBJECT;
+    #####:  826:          $$.value.object = function->return_obj;
+    #####:  827:          $$.identifier = function->identifier;
+        -:  828:        }
+        -:  829:        else
+        -:  830:        {
+    #####:  831:          yr_compiler_set_error_extra_info(
+        -:  832:              compiler, $1.identifier);
+        -:  833:
+    #####:  834:          result = ERROR_NOT_A_FUNCTION;
+        -:  835:        }
+        -:  836:
+    #####:  837:        yr_free($3);
+        -:  838:
+    #####:  839:        fail_if_error(result);
+        -:  840:      }
+        -:  841:    ;
+        -:  842:
+        -:  843:
+        -:  844:arguments
+    #####:  845:    : /* empty */     { $$ = yr_strdup(""); }
+    #####:  846:    | arguments_list  { $$ = $1; }
+        -:  847:
+        -:  848:
+        -:  849:arguments_list
+        -:  850:    : expression
+        -:  851:      {
+    #####:  852:        $$ = (char*) yr_malloc(YR_MAX_FUNCTION_ARGS + 1);
+        -:  853:
+    #####:  854:        if ($$ == NULL)
+    #####:  855:          fail_if_error(ERROR_INSUFFICIENT_MEMORY);
+        -:  856:
+    #####:  857:        switch($1.type)
+        -:  858:        {
+    #####:  859:          case EXPRESSION_TYPE_INTEGER:
+    #####:  860:            strlcpy($$, "i", YR_MAX_FUNCTION_ARGS);
+    #####:  861:            break;
+    #####:  862:          case EXPRESSION_TYPE_FLOAT:
+    #####:  863:            strlcpy($$, "f", YR_MAX_FUNCTION_ARGS);
+    #####:  864:            break;
+    #####:  865:          case EXPRESSION_TYPE_BOOLEAN:
+    #####:  866:            strlcpy($$, "b", YR_MAX_FUNCTION_ARGS);
+    #####:  867:            break;
+    #####:  868:          case EXPRESSION_TYPE_STRING:
+    #####:  869:            strlcpy($$, "s", YR_MAX_FUNCTION_ARGS);
+    #####:  870:            break;
+    #####:  871:          case EXPRESSION_TYPE_REGEXP:
+    #####:  872:            strlcpy($$, "r", YR_MAX_FUNCTION_ARGS);
+    #####:  873:            break;
+    #####:  874:          default:
+    #####:  875:            assert(false);
+        -:  876:        }
+        -:  877:      }
+        -:  878:    | arguments_list ',' expression
+        -:  879:      {
+    #####:  880:        int result = ERROR_SUCCESS;
+        -:  881:
+    #####:  882:        if (strlen($1) == YR_MAX_FUNCTION_ARGS)
+        -:  883:        {
+    #####:  884:          result = ERROR_TOO_MANY_ARGUMENTS;
+        -:  885:        }
+        -:  886:        else
+        -:  887:        {
+    #####:  888:          switch($3.type)
+        -:  889:          {
+    #####:  890:            case EXPRESSION_TYPE_INTEGER:
+    #####:  891:              strlcat($1, "i", YR_MAX_FUNCTION_ARGS);
+    #####:  892:              break;
+    #####:  893:            case EXPRESSION_TYPE_FLOAT:
+    #####:  894:              strlcat($1, "f", YR_MAX_FUNCTION_ARGS);
+    #####:  895:              break;
+    #####:  896:            case EXPRESSION_TYPE_BOOLEAN:
+    #####:  897:              strlcat($1, "b", YR_MAX_FUNCTION_ARGS);
+    #####:  898:              break;
+    #####:  899:            case EXPRESSION_TYPE_STRING:
+    #####:  900:              strlcat($1, "s", YR_MAX_FUNCTION_ARGS);
+    #####:  901:              break;
+    #####:  902:            case EXPRESSION_TYPE_REGEXP:
+    #####:  903:              strlcat($1, "r", YR_MAX_FUNCTION_ARGS);
+    #####:  904:              break;
+    #####:  905:            default:
+    #####:  906:              assert(false);
+        -:  907:          }
+        -:  908:        }
+        -:  909:
+    #####:  910:        fail_if_error(result);
+        -:  911:
+    #####:  912:        $$ = $1;
+        -:  913:      }
+        -:  914:    ;
+        -:  915:
+        -:  916:
+        -:  917:regexp
+        -:  918:    : _REGEXP_
+        -:  919:      {
+    #####:  920:        SIZED_STRING* sized_string = $1;
+        -:  921:        RE* re;
+        -:  922:        RE_ERROR error;
+        -:  923:
+    #####:  924:        int result = ERROR_SUCCESS;
+    #####:  925:        int re_flags = 0;
+        -:  926:
+    #####:  927:        if (sized_string->flags & SIZED_STRING_FLAGS_NO_CASE)
+    #####:  928:          re_flags |= RE_FLAGS_NO_CASE;
+        -:  929:
+    #####:  930:        if (sized_string->flags & SIZED_STRING_FLAGS_DOT_ALL)
+    #####:  931:          re_flags |= RE_FLAGS_DOT_ALL;
+        -:  932:
+    #####:  933:        result = yr_re_compile(
+    #####:  934:            sized_string->c_string,
+        -:  935:            re_flags,
+        -:  936:            compiler->re_code_arena,
+        -:  937:            &re,
+        -:  938:            &error);
+        -:  939:
+    #####:  940:        yr_free($1);
+        -:  941:
+    #####:  942:        if (result == ERROR_INVALID_REGULAR_EXPRESSION)
+    #####:  943:          yr_compiler_set_error_extra_info(compiler, error.message);
+        -:  944:
+    #####:  945:        if (result == ERROR_SUCCESS)
+    #####:  946:          result = yr_parser_emit_with_arg_reloc(
+        -:  947:              yyscanner,
+        -:  948:              OP_PUSH,
+        -:  949:              re,
+        -:  950:              NULL,
+        -:  951:              NULL);
+        -:  952:
+    #####:  953:        fail_if_error(result);
+        -:  954:
+    #####:  955:        $$.type = EXPRESSION_TYPE_REGEXP;
+        -:  956:      }
+        -:  957:    ;
+        -:  958:
+        -:  959:
+        -:  960:boolean_expression
+        -:  961:    : expression
+        -:  962:      {
+    #####:  963:        if ($1.type == EXPRESSION_TYPE_STRING)
+        -:  964:        {
+    #####:  965:          if ($1.value.sized_string != NULL)
+        -:  966:          {
+    #####:  967:            yywarning(yyscanner,
+        -:  968:              "Using literal string \"%s\" in a boolean operation.",
+    #####:  969:              $1.value.sized_string->c_string);
+        -:  970:          }
+        -:  971:
+    #####:  972:          fail_if_error(yr_parser_emit(
+        -:  973:              yyscanner, OP_STR_TO_BOOL, NULL));
+        -:  974:        }
+        -:  975:
+    #####:  976:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -:  977:      }
+        -:  978:    ;
+        -:  979:
+        -:  980:expression
+        -:  981:    : _TRUE_
+        -:  982:      {
+    #####:  983:        fail_if_error(yr_parser_emit_with_arg(
+        -:  984:            yyscanner, OP_PUSH, 1, NULL, NULL));
+        -:  985:
+    #####:  986:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -:  987:      }
+        -:  988:    | _FALSE_
+        -:  989:      {
+    #####:  990:        fail_if_error(yr_parser_emit_with_arg(
+        -:  991:            yyscanner, OP_PUSH, 0, NULL, NULL));
+        -:  992:
+    #####:  993:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -:  994:      }
+        -:  995:    | primary_expression _MATCHES_ regexp
+        -:  996:      {
+    #####:  997:        check_type($1, EXPRESSION_TYPE_STRING, "matches");
+    #####:  998:        check_type($3, EXPRESSION_TYPE_REGEXP, "matches");
+        -:  999:
+    #####: 1000:        fail_if_error(yr_parser_emit(
+        -: 1001:            yyscanner,
+        -: 1002:            OP_MATCHES,
+        -: 1003:            NULL));
+        -: 1004:
+    #####: 1005:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1006:      }
+        -: 1007:    | primary_expression _CONTAINS_ primary_expression
+        -: 1008:      {
+    #####: 1009:        check_type($1, EXPRESSION_TYPE_STRING, "contains");
+    #####: 1010:        check_type($3, EXPRESSION_TYPE_STRING, "contains");
+        -: 1011:
+    #####: 1012:        fail_if_error(yr_parser_emit(
+        -: 1013:            yyscanner, OP_CONTAINS, NULL));
+        -: 1014:
+    #####: 1015:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1016:      }
+        -: 1017:    | _STRING_IDENTIFIER_
+        -: 1018:      {
+    #####: 1019:        int result = yr_parser_reduce_string_identifier(
+        -: 1020:            yyscanner,
+    #####: 1021:            $1,
+        -: 1022:            OP_FOUND,
+        -: 1023:            UNDEFINED);
+        -: 1024:
+    #####: 1025:        yr_free($1);
+        -: 1026:
+    #####: 1027:        fail_if_error(result);
+        -: 1028:
+    #####: 1029:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1030:      }
+        -: 1031:    | _STRING_IDENTIFIER_ _AT_ primary_expression
+        -: 1032:      {
+        -: 1033:        int result;
+        -: 1034:
+    #####: 1035:        check_type_with_cleanup($3, EXPRESSION_TYPE_INTEGER, "at", yr_free($1));
+        -: 1036:
+    #####: 1037:        result = yr_parser_reduce_string_identifier(
+    #####: 1038:            yyscanner, $1, OP_FOUND_AT, $3.value.integer);
+        -: 1039:
+    #####: 1040:        yr_free($1);
+        -: 1041:
+    #####: 1042:        fail_if_error(result);
+        -: 1043:
+    #####: 1044:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1045:      }
+        -: 1046:    | _STRING_IDENTIFIER_ _IN_ range
+        -: 1047:      {
+    #####: 1048:        int result = yr_parser_reduce_string_identifier(
+    #####: 1049:            yyscanner, $1, OP_FOUND_IN, UNDEFINED);
+        -: 1050:
+    #####: 1051:        yr_free($1);
+        -: 1052:
+    #####: 1053:        fail_if_error(result);
+        -: 1054:
+    #####: 1055:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1056:      }
+        -: 1057:    | _FOR_ for_expression error
+        -: 1058:      {
+    #####: 1059:        if (compiler->loop_depth > 0)
+        -: 1060:        {
+    #####: 1061:          compiler->loop_depth--;
+    #####: 1062:          compiler->loop_identifier[compiler->loop_depth] = NULL;
+        -: 1063:        }
+        -: 1064:
+    #####: 1065:        YYERROR;
+        -: 1066:      }
+        -: 1067:    | _FOR_ for_expression _IDENTIFIER_ _IN_
+        -: 1068:      {
+        -: 1069:        // for all i in (N..M) : (<expr>)
+        -: 1070:        //
+        -: 1071:        // 1       PUSH UNDEF  ; "all"
+        -: 1072:        // 2       PUSH UNDEF  ; "end of list"
+        -: 1073:        // 3       PUSH N      ; integer range lower bound
+        -: 1074:        // 4       PUSH M      ; integer range upper bound
+        -: 1075:        // 7       CLEAR_M 1   ; clear <expr> result accumulator
+        -: 1076:        // 8       CLEAR_M 2   ; clear loop iteration counter
+        -: 1077:        // 5       POP_M 3     ; store range upper bound
+        -: 1078:        // 6       POP_M 0     ; store range lower bound
+        -: 1079:        // 9    .->INCR_M 2    ; increment loop iteration counter
+        -: 1080:        //      |  <expr>      ; here goes the code for <expr>, its result will
+        -: 1081:        //      |                be at the top of the stack
+        -: 1082:        // 10   |  SET_M 4     ; store boolean expression result in memory 4
+        -: 1083:        // 11   |  ADD_M 1     ; add boolean_expression result to accumulator
+        -: 1084:        // 12   |  INCR_M 0    ; increment range lower bound (more like current bound)
+        -: 1085:        // 13   |  PUSH_M 4    ; boolean expression result
+        -: 1086:        // 14 .-+--JFALSE_P    ; jump out of loop if last result is false
+        -: 1087:        // 15 | |  PUSH_M 0    ; lower (current) bound
+        -: 1088:        // 16 | |  PUSH_M 3    ; upper bound
+        -: 1089:        // 17 | `--JLE_P       ; jump to start of loop if we haven't iterated enough
+        -: 1090:        // 18 `--->POP         ; pop end of list
+        -: 1091:        // 19      SWAPUNDEF 2 ; swap the UNDEF ("all") with loop iteration
+        -: 1092:        //                       counter (memory 2)
+        -: 1093:        // 20      PUSH_M 1    ; push the boolean_expression accumulator
+        -: 1094:        // 21      INT_LE      ; compare boolean_expression accumulator to loop
+        -: 1095:        //                       iteration counter
+        -: 1096:
+        -: 1097:        // for X i in (N..M) : (<expr>)
+        -: 1098:        //
+        -: 1099:        // 1       PUSH X      ;
+        -: 1100:        // 2       SET_M 4     ; store primary_expression in m4
+        -: 1101:        // 3       PUSH UNDEF  ; "end of list"
+        -: 1102:        // 4       PUSH 0      ; integer range lower bound
+        -: 1103:        // 5       PUSH 5      ; integer range upper bound
+        -: 1104:        // 8       CLEAR_M 1   ; clear <expr> result accumulator
+        -: 1105:        // 9       CLEAR_M 2   ; clear loop iteration counter
+        -: 1106:        // 6       POP_M 3     ; store upper bound
+        -: 1107:        // 7       POP_M 0     ; store lower bound
+        -: 1108:        // 10   .->INCR_M 2    ; increment loop iteration counter
+        -: 1109:        // 11   |  <expr>      ; here goes the code for <expr>, its result will
+        -: 1110:        //      |              ; be at the  top of the stack
+        -: 1111:        // 12   |  ADD_M 1     ; add boolean_expression result to accumulator
+        -: 1112:        // 13   |  INCR_M 0    ; increment lower bound (more like current bound)
+        -: 1113:        // 14   |  PUSH_M 4    ; primary expression minimum
+        -: 1114:        // 15   |  PUSH_M 1    ; boolean_expression accumulator
+        -: 1115:        // 16 .-+--JLE_P       ; jump out of loop if (minimum <= accumulator)
+        -: 1116:        // 17 | |  PUSH_M 0    ; lower (current) bound
+        -: 1117:        // 18 | |  PUSH_M 3    ; upper bound
+        -: 1118:        // 19 | `--JLE_P       ; jump to start of loop if we haven't iterated enough
+        -: 1119:        // 20 `--->POP         ; pop end of list
+        -: 1120:        // 21      SWAPUNDEF 2 ; at this point only our "any" is on the stack,
+        -: 1121:        //                       this is effectively a NOP
+        -: 1122:        // 22      PUSH_M 1    ; push the boolean_expression accumulator
+        -: 1123:        // 23      INT_LE      ; compare boolean_expression accumulator to X
+        -: 1124:
+        -: 1125:        // for X i in (A, B, C) : (<expr>)
+        -: 1126:        //
+        -: 1127:        // 1       PUSH X      ;
+        -: 1128:        // 2       SET_M 4     ; store primary_expression in m4
+        -: 1129:        // 3       PUSH UNDEF  ; "end of list"
+        -: 1130:        // 4       PUSH A
+        -: 1131:        // 5       PUSH B
+        -: 1132:        // 6       PUSH C
+        -: 1133:        // 7       CLEAR_M 1   ; clear <expr> result accumulator
+        -: 1134:        // 8       CLEAR_M 2   ; clear loop iteration counter
+        -: 1135:        // 9    .->INCR_M 2    ; increment loop iteration counter
+        -: 1136:        // 10   |  POP_M 0     ; store current item in M[0]
+        -: 1137:        // 11   |  <expr>      ; here goes the code for <expr>, its result will
+        -: 1138:        //      |              ; be at the  top of the stack
+        -: 1139:        // 12   |  ADD_M 1     ; add boolean_expression result to accumulator
+        -: 1140:        // 13   `--JNUNDEF     ; if "end of list" was not reached, repeat.
+        -: 1141:        // 14      POP         ; pop end of list
+        -: 1142:        // 15      SWAPUNDEF 2 ; swap the UNDEF with loop iteration counter M[2]
+        -: 1143:        // 16      PUSH_M 1    ; push boolean_expression result accumulator
+        -: 1144:        // 17      INT_LE      ; compare boolean_expression accumulator to X
+        -: 1145:
+        -: 1146:
+    #####: 1147:        int mem_offset = LOOP_LOCAL_VARS * compiler->loop_depth;
+    #####: 1148:        int result = ERROR_SUCCESS;
+        -: 1149:        int var_index;
+        -: 1150:
+    #####: 1151:        if (compiler->loop_depth == YR_MAX_LOOP_NESTING)
+    #####: 1152:          result = ERROR_LOOP_NESTING_LIMIT_EXCEEDED;
+        -: 1153:
+    #####: 1154:        fail_if_error(result);
+        -: 1155:
+    #####: 1156:        var_index = yr_parser_lookup_loop_variable(
+    #####: 1157:            yyscanner, $3);
+        -: 1158:
+    #####: 1159:        if (var_index >= 0)
+        -: 1160:        {
+    #####: 1161:          yr_compiler_set_error_extra_info(
+        -: 1162:              compiler, $3);
+        -: 1163:
+    #####: 1164:          result = ERROR_DUPLICATED_LOOP_IDENTIFIER;
+        -: 1165:        }
+        -: 1166:
+    #####: 1167:        fail_if_error(result);
+        -: 1168:
+        -: 1169:        // "any" loops require us to store the primary expression for
+        -: 1170:        // later evaluation, but "all" loops do not. The OP_SWAPUNDEF after the
+        -: 1171:        // loop ensures we evaluate the proper values.
+    #####: 1172:        if ($2 == FOR_EXPRESSION_ANY)
+        -: 1173:        {
+    #####: 1174:          yr_parser_emit_with_arg(
+    #####: 1175:            yyscanner, OP_SET_M, mem_offset + 4, NULL, NULL);
+        -: 1176:        }
+        -: 1177:
+        -: 1178:        // Push end-of-list marker
+    #####: 1179:        result = yr_parser_emit_with_arg(
+        -: 1180:            yyscanner, OP_PUSH, UNDEFINED, NULL, NULL);
+        -: 1181:
+    #####: 1182:        fail_if_error(result);
+        -: 1183:      }
+        -: 1184:      integer_set ':'
+        -: 1185:      {
+    #####: 1186:        int mem_offset = LOOP_LOCAL_VARS * compiler->loop_depth;
+        -: 1187:        uint8_t* addr;
+        -: 1188:
+        -: 1189:        // Clear counter for number of expressions evaluating
+        -: 1190:        // to true.
+    #####: 1191:        yr_parser_emit_with_arg(
+    #####: 1192:            yyscanner, OP_CLEAR_M, mem_offset + 1, NULL, NULL);
+        -: 1193:
+        -: 1194:        // Clear iterations counter
+    #####: 1195:        yr_parser_emit_with_arg(
+    #####: 1196:            yyscanner, OP_CLEAR_M, mem_offset + 2, NULL, NULL);
+        -: 1197:
+    #####: 1198:        if ($6 == INTEGER_SET_ENUMERATION)
+        -: 1199:        {
+        -: 1200:          // Increment iterations counter
+    #####: 1201:          yr_parser_emit_with_arg(
+    #####: 1202:              yyscanner, OP_INCR_M, mem_offset + 2, &addr, NULL);
+        -: 1203:
+        -: 1204:          // Pop the first integer
+    #####: 1205:          yr_parser_emit_with_arg(
+        -: 1206:              yyscanner, OP_POP_M, mem_offset, NULL, NULL);
+        -: 1207:        }
+        -: 1208:        else // INTEGER_SET_RANGE
+        -: 1209:        {
+        -: 1210:          // Pop higher bound of set range
+    #####: 1211:          yr_parser_emit_with_arg(
+    #####: 1212:              yyscanner, OP_POP_M, mem_offset + 3, NULL, NULL);
+        -: 1213:
+        -: 1214:          // Pop lower bound of set range
+    #####: 1215:          yr_parser_emit_with_arg(
+        -: 1216:              yyscanner, OP_POP_M, mem_offset, NULL, NULL);
+        -: 1217:
+        -: 1218:          // Increment iterations counter
+    #####: 1219:          yr_parser_emit_with_arg(
+    #####: 1220:              yyscanner, OP_INCR_M, mem_offset + 2, &addr, NULL);
+        -: 1221:        }
+        -: 1222:
+    #####: 1223:        compiler->loop_address[compiler->loop_depth] = addr;
+    #####: 1224:        compiler->loop_identifier[compiler->loop_depth] = $3;
+    #####: 1225:        compiler->loop_depth++;
+        -: 1226:      }
+        -: 1227:      '(' boolean_expression ')'
+        -: 1228:      {
+        -: 1229:        int mem_offset;
+        -: 1230:        YR_FIXUP* fixup;
+        -: 1231:        void* jmp_destination_addr;
+        -: 1232:        uint8_t* pop_addr;
+        -: 1233:
+    #####: 1234:        compiler->loop_depth--;
+    #####: 1235:        mem_offset = LOOP_LOCAL_VARS * compiler->loop_depth;
+        -: 1236:
+        -: 1237:        // The value at the top of the stack is the result of
+        -: 1238:        // evaluating the boolean expression, so it could be
+        -: 1239:        // 0, 1 or UNDEFINED. Add this value to a counter
+        -: 1240:        // keeping the number of expressions evaluating to true.
+        -: 1241:        // If the value is UNDEFINED instruction OP_ADD_M
+        -: 1242:        // does nothing.
+        -: 1243:
+    #####: 1244:        if ($2 == FOR_EXPRESSION_ALL)
+        -: 1245:        {
+        -: 1246:          // Store the last result for checking after we have incremented the
+        -: 1247:          // counters. We want to keep the value on the stack though.
+    #####: 1248:          yr_parser_emit_with_arg(
+    #####: 1249:              yyscanner, OP_SET_M, mem_offset + 4, NULL, NULL);
+        -: 1250:        }
+        -: 1251:
+    #####: 1252:        yr_parser_emit_with_arg(
+    #####: 1253:            yyscanner, OP_ADD_M, mem_offset + 1, NULL, NULL);
+        -: 1254:
+    #####: 1255:        if ($6 == INTEGER_SET_ENUMERATION)
+        -: 1256:        {
+    #####: 1257:          yr_parser_emit_with_arg_reloc(
+        -: 1258:              yyscanner,
+        -: 1259:              OP_JNUNDEF,
+    #####: 1260:              compiler->loop_address[compiler->loop_depth],
+        -: 1261:              NULL,
+        -: 1262:              NULL);
+        -: 1263:
+        -: 1264:          // Pop end-of-list marker.
+    #####: 1265:          yr_parser_emit(yyscanner, OP_POP, NULL);
+        -: 1266:        }
+        -: 1267:        else // INTEGER_SET_RANGE
+        -: 1268:        {
+        -: 1269:          // Increment lower bound of integer set
+    #####: 1270:          yr_parser_emit_with_arg(
+        -: 1271:              yyscanner, OP_INCR_M, mem_offset, NULL, NULL);
+        -: 1272:
+        -: 1273:          // Push loop quantifier
+    #####: 1274:          yr_parser_emit_with_arg(
+    #####: 1275:              yyscanner, OP_PUSH_M, mem_offset + 4, NULL, NULL);
+        -: 1276:
+    #####: 1277:          if ($2 == FOR_EXPRESSION_ALL)
+        -: 1278:          {
+    #####: 1279:            fail_if_error(yr_parser_emit_with_arg_reloc(
+        -: 1280:                yyscanner,
+        -: 1281:                OP_JFALSE_P,
+        -: 1282:                0, // Don't know the jump destination yet
+        -: 1283:                NULL,
+        -: 1284:                &jmp_destination_addr));
+        -: 1285:
+        -: 1286:            // create a fixup entry for the jump and push it in the stack
+    #####: 1287:            fixup = (YR_FIXUP*) yr_malloc(sizeof(YR_FIXUP));
+        -: 1288:
+    #####: 1289:            if (fixup == NULL)
+    #####: 1290:              fail_if_error(ERROR_INSUFFICIENT_MEMORY);
+        -: 1291:
+    #####: 1292:            fixup->address = jmp_destination_addr;
+    #####: 1293:            fixup->next = compiler->fixup_stack_head;
+    #####: 1294:            compiler->fixup_stack_head = fixup;
+        -: 1295:          }
+    #####: 1296:          else if ($2 == FOR_EXPRESSION_ANY)
+        -: 1297:          {
+        -: 1298:            // Push the number of expressions evaluating to true
+    #####: 1299:            yr_parser_emit_with_arg(
+    #####: 1300:                yyscanner, OP_PUSH_M, mem_offset + 1, NULL, NULL);
+        -: 1301:
+        -: 1302:            // Compare the loop quantifier to number of expressions that evaluate
+        -: 1303:            // to true, in order to eliminate extraneous loop iterations.
+    #####: 1304:            fail_if_error(yr_parser_emit_with_arg_reloc(
+        -: 1305:                yyscanner,
+        -: 1306:                OP_JLE_P,
+        -: 1307:                0, // Don't know the jump destination yet
+        -: 1308:                NULL,
+        -: 1309:                &jmp_destination_addr));
+        -: 1310:
+    #####: 1311:            fixup = (YR_FIXUP*) yr_malloc(sizeof(YR_FIXUP));
+        -: 1312:
+    #####: 1313:            if (fixup == NULL)
+    #####: 1314:              fail_if_error(ERROR_INSUFFICIENT_MEMORY);
+        -: 1315:
+    #####: 1316:            fixup->address = jmp_destination_addr;
+    #####: 1317:            fixup->next = compiler->fixup_stack_head;
+    #####: 1318:            compiler->fixup_stack_head = fixup;
+        -: 1319:          }
+        -: 1320:
+        -: 1321:          // Push lower bound of integer set
+    #####: 1322:          yr_parser_emit_with_arg(
+        -: 1323:              yyscanner, OP_PUSH_M, mem_offset, NULL, NULL);
+        -: 1324:
+        -: 1325:          // Push higher bound of integer set
+    #####: 1326:          yr_parser_emit_with_arg(
+    #####: 1327:              yyscanner, OP_PUSH_M, mem_offset + 3, NULL, NULL);
+        -: 1328:
+        -: 1329:          // Compare higher bound with lower bound, do loop again
+        -: 1330:          // if lower bound is still lower or equal than higher bound
+    #####: 1331:          yr_parser_emit_with_arg_reloc(
+        -: 1332:              yyscanner,
+        -: 1333:              OP_JLE_P,
+    #####: 1334:              compiler->loop_address[compiler->loop_depth],
+        -: 1335:              NULL,
+        -: 1336:              NULL);
+        -: 1337:
+        -: 1338:          // Pop end-of-list marker.
+    #####: 1339:          yr_parser_emit(yyscanner, OP_POP, &pop_addr);
+        -: 1340:
+    #####: 1341:          fixup = compiler->fixup_stack_head;
+    #####: 1342:          *(void**)(fixup->address) = (void*)(pop_addr);
+    #####: 1343:          compiler->fixup_stack_head = fixup->next;
+    #####: 1344:          yr_free(fixup);
+        -: 1345:        }
+        -: 1346:
+        -: 1347:        // At this point the loop quantifier (any, all, 1, 2,..)
+        -: 1348:        // is at the top of the stack. Check if the quantifier
+        -: 1349:        // is undefined (meaning "all") and replace it with the
+        -: 1350:        // iterations counter in that case.
+    #####: 1351:        yr_parser_emit_with_arg(
+    #####: 1352:            yyscanner, OP_SWAPUNDEF, mem_offset + 2, NULL, NULL);
+        -: 1353:
+        -: 1354:        // Compare the loop quantifier with the number of
+        -: 1355:        // expressions evaluating to true.
+    #####: 1356:        yr_parser_emit_with_arg(
+    #####: 1357:            yyscanner, OP_PUSH_M, mem_offset + 1, NULL, NULL);
+        -: 1358:
+    #####: 1359:        yr_parser_emit(yyscanner, OP_INT_LE, NULL);
+        -: 1360:
+    #####: 1361:        compiler->loop_identifier[compiler->loop_depth] = NULL;
+    #####: 1362:        yr_free($3);
+        -: 1363:
+    #####: 1364:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1365:      }
+        -: 1366:    | _FOR_ for_expression _OF_ string_set ':'
+        -: 1367:      {
+    #####: 1368:        int result = ERROR_SUCCESS;
+    #####: 1369:        int mem_offset = LOOP_LOCAL_VARS * compiler->loop_depth;
+        -: 1370:        uint8_t* addr;
+        -: 1371:
+    #####: 1372:        if (compiler->loop_depth == YR_MAX_LOOP_NESTING)
+    #####: 1373:          result = ERROR_LOOP_NESTING_LIMIT_EXCEEDED;
+        -: 1374:
+    #####: 1375:        if (compiler->loop_for_of_mem_offset != -1)
+    #####: 1376:          result = ERROR_NESTED_FOR_OF_LOOP;
+        -: 1377:
+    #####: 1378:        fail_if_error(result);
+        -: 1379:
+    #####: 1380:        yr_parser_emit_with_arg(
+    #####: 1381:            yyscanner, OP_CLEAR_M, mem_offset + 1, NULL, NULL);
+        -: 1382:
+    #####: 1383:        yr_parser_emit_with_arg(
+    #####: 1384:            yyscanner, OP_CLEAR_M, mem_offset + 2, NULL, NULL);
+        -: 1385:
+        -: 1386:        // Pop the first string.
+    #####: 1387:        yr_parser_emit_with_arg(
+        -: 1388:            yyscanner, OP_POP_M, mem_offset, &addr, NULL);
+        -: 1389:
+    #####: 1390:        compiler->loop_for_of_mem_offset = mem_offset;
+    #####: 1391:        compiler->loop_address[compiler->loop_depth] = addr;
+    #####: 1392:        compiler->loop_identifier[compiler->loop_depth] = NULL;
+    #####: 1393:        compiler->loop_depth++;
+        -: 1394:      }
+        -: 1395:      '(' boolean_expression ')'
+        -: 1396:      {
+        -: 1397:        int mem_offset;
+        -: 1398:
+    #####: 1399:        compiler->loop_depth--;
+    #####: 1400:        compiler->loop_for_of_mem_offset = -1;
+        -: 1401:
+    #####: 1402:        mem_offset = LOOP_LOCAL_VARS * compiler->loop_depth;
+        -: 1403:
+        -: 1404:        // Increment counter by the value returned by the
+        -: 1405:        // boolean expression (0 or 1). If the boolean expression
+        -: 1406:        // returned UNDEFINED the OP_ADD_M won't do anything.
+        -: 1407:
+    #####: 1408:        yr_parser_emit_with_arg(
+    #####: 1409:            yyscanner, OP_ADD_M, mem_offset + 1, NULL, NULL);
+        -: 1410:
+        -: 1411:        // Increment iterations counter.
+    #####: 1412:        yr_parser_emit_with_arg(
+    #####: 1413:            yyscanner, OP_INCR_M, mem_offset + 2, NULL, NULL);
+        -: 1414:
+        -: 1415:        // If next string is not undefined, go back to the
+        -: 1416:        // beginning of the loop.
+    #####: 1417:        yr_parser_emit_with_arg_reloc(
+        -: 1418:            yyscanner,
+        -: 1419:            OP_JNUNDEF,
+    #####: 1420:            compiler->loop_address[compiler->loop_depth],
+        -: 1421:            NULL,
+        -: 1422:            NULL);
+        -: 1423:
+        -: 1424:        // Pop end-of-list marker.
+    #####: 1425:        yr_parser_emit(yyscanner, OP_POP, NULL);
+        -: 1426:
+        -: 1427:        // At this point the loop quantifier (any, all, 1, 2,..)
+        -: 1428:        // is at top of the stack. Check if the quantifier is
+        -: 1429:        // undefined (meaning "all") and replace it with the
+        -: 1430:        // iterations counter in that case.
+    #####: 1431:        yr_parser_emit_with_arg(
+    #####: 1432:            yyscanner, OP_SWAPUNDEF, mem_offset + 2, NULL, NULL);
+        -: 1433:
+        -: 1434:        // Compare the loop quantifier with the number of
+        -: 1435:        // expressions evaluating to true.
+    #####: 1436:        yr_parser_emit_with_arg(
+    #####: 1437:            yyscanner, OP_PUSH_M, mem_offset + 1, NULL, NULL);
+        -: 1438:
+    #####: 1439:        yr_parser_emit(yyscanner, OP_INT_LE, NULL);
+        -: 1440:
+    #####: 1441:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1442:
+        -: 1443:      }
+        -: 1444:    | for_expression _OF_ string_set
+        -: 1445:      {
+    #####: 1446:        yr_parser_emit(yyscanner, OP_OF, NULL);
+        -: 1447:
+    #####: 1448:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1449:      }
+        -: 1450:    | _NOT_ boolean_expression
+        -: 1451:      {
+    #####: 1452:        yr_parser_emit(yyscanner, OP_NOT, NULL);
+        -: 1453:
+    #####: 1454:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1455:      }
+        -: 1456:    | boolean_expression _AND_
+        -: 1457:      {
+        -: 1458:        YR_FIXUP* fixup;
+        -: 1459:        void* jmp_destination_addr;
+        -: 1460:
+    #####: 1461:        fail_if_error(yr_parser_emit_with_arg_reloc(
+        -: 1462:            yyscanner,
+        -: 1463:            OP_JFALSE,
+        -: 1464:            0,          // still don't know the jump destination
+        -: 1465:            NULL,
+        -: 1466:            &jmp_destination_addr));
+        -: 1467:
+        -: 1468:        // create a fixup entry for the jump and push it in the stack
+    #####: 1469:        fixup = (YR_FIXUP*) yr_malloc(sizeof(YR_FIXUP));
+        -: 1470:
+    #####: 1471:        if (fixup == NULL)
+    #####: 1472:          fail_if_error(ERROR_INSUFFICIENT_MEMORY);
+        -: 1473:
+    #####: 1474:        fixup->address = jmp_destination_addr;
+    #####: 1475:        fixup->next = compiler->fixup_stack_head;
+    #####: 1476:        compiler->fixup_stack_head = fixup;
+        -: 1477:      }
+        -: 1478:      boolean_expression
+        -: 1479:      {
+        -: 1480:        YR_FIXUP* fixup;
+        -: 1481:        uint8_t* nop_addr;
+        -: 1482:
+    #####: 1483:        fail_if_error(yr_parser_emit(yyscanner, OP_AND, NULL));
+        -: 1484:
+        -: 1485:        // Generate a do-nothing instruction (NOP) in order to get its address
+        -: 1486:        // and use it as the destination for the OP_JFALSE. We can not simply
+        -: 1487:        // use the address of the OP_AND instruction +1 because we can't be
+        -: 1488:        // sure that the instruction following the OP_AND is going to be in
+        -: 1489:        // the same arena page. As we don't have a reliable way of getting the
+        -: 1490:        // address of the next instruction we generate the OP_NOP.
+        -: 1491:
+    #####: 1492:        fail_if_error(yr_parser_emit(yyscanner, OP_NOP, &nop_addr));
+        -: 1493:
+    #####: 1494:        fixup = compiler->fixup_stack_head;
+    #####: 1495:        *(void**)(fixup->address) = (void*) nop_addr;
+    #####: 1496:        compiler->fixup_stack_head = fixup->next;
+    #####: 1497:        yr_free(fixup);
+        -: 1498:
+    #####: 1499:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1500:      }
+        -: 1501:    | boolean_expression _OR_
+        -: 1502:      {
+        -: 1503:        YR_FIXUP* fixup;
+        -: 1504:        void* jmp_destination_addr;
+        -: 1505:
+    #####: 1506:        fail_if_error(yr_parser_emit_with_arg_reloc(
+        -: 1507:            yyscanner,
+        -: 1508:            OP_JTRUE,
+        -: 1509:            0,         // still don't know the jump destination
+        -: 1510:            NULL,
+        -: 1511:            &jmp_destination_addr));
+        -: 1512:
+    #####: 1513:        fixup = (YR_FIXUP*) yr_malloc(sizeof(YR_FIXUP));
+        -: 1514:
+    #####: 1515:        if (fixup == NULL)
+    #####: 1516:          fail_if_error(ERROR_INSUFFICIENT_MEMORY);
+        -: 1517:
+    #####: 1518:        fixup->address = jmp_destination_addr;
+    #####: 1519:        fixup->next = compiler->fixup_stack_head;
+    #####: 1520:        compiler->fixup_stack_head = fixup;
+        -: 1521:      }
+        -: 1522:      boolean_expression
+        -: 1523:      {
+        -: 1524:        YR_FIXUP* fixup;
+        -: 1525:        uint8_t* nop_addr;
+        -: 1526:
+    #####: 1527:        fail_if_error(yr_parser_emit(yyscanner, OP_OR, NULL));
+        -: 1528:
+        -: 1529:        // Generate a do-nothing instruction (NOP) in order to get its address
+        -: 1530:        // and use it as the destination for the OP_JFALSE. We can not simply
+        -: 1531:        // use the address of the OP_OR instruction +1 because we can't be
+        -: 1532:        // sure that the instruction following the OP_AND is going to be in
+        -: 1533:        // the same arena page. As we don't have a reliable way of getting the
+        -: 1534:        // address of the next instruction we generate the OP_NOP.
+        -: 1535:
+    #####: 1536:        fail_if_error(yr_parser_emit(yyscanner, OP_NOP, &nop_addr));
+        -: 1537:
+    #####: 1538:        fixup = compiler->fixup_stack_head;
+    #####: 1539:        *(void**)(fixup->address) = (void*)(nop_addr);
+    #####: 1540:        compiler->fixup_stack_head = fixup->next;
+    #####: 1541:        yr_free(fixup);
+        -: 1542:
+    #####: 1543:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1544:      }
+        -: 1545:    | primary_expression _LT_ primary_expression
+        -: 1546:      {
+    #####: 1547:        fail_if_error(yr_parser_reduce_operation(
+        -: 1548:            yyscanner, "<", $1, $3));
+        -: 1549:
+    #####: 1550:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1551:      }
+        -: 1552:    | primary_expression _GT_ primary_expression
+        -: 1553:      {
+    #####: 1554:        fail_if_error(yr_parser_reduce_operation(
+        -: 1555:            yyscanner, ">", $1, $3));
+        -: 1556:
+    #####: 1557:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1558:      }
+        -: 1559:    | primary_expression _LE_ primary_expression
+        -: 1560:      {
+    #####: 1561:        fail_if_error(yr_parser_reduce_operation(
+        -: 1562:            yyscanner, "<=", $1, $3));
+        -: 1563:
+    #####: 1564:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1565:      }
+        -: 1566:    | primary_expression _GE_ primary_expression
+        -: 1567:      {
+    #####: 1568:        fail_if_error(yr_parser_reduce_operation(
+        -: 1569:            yyscanner, ">=", $1, $3));
+        -: 1570:
+    #####: 1571:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1572:      }
+        -: 1573:    | primary_expression _EQ_ primary_expression
+        -: 1574:      {
+    #####: 1575:        fail_if_error(yr_parser_reduce_operation(
+        -: 1576:            yyscanner, "==", $1, $3));
+        -: 1577:
+    #####: 1578:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1579:      }
+        -: 1580:    | primary_expression _NEQ_ primary_expression
+        -: 1581:      {
+    #####: 1582:        fail_if_error(yr_parser_reduce_operation(
+        -: 1583:            yyscanner, "!=", $1, $3));
+        -: 1584:
+    #####: 1585:        $$.type = EXPRESSION_TYPE_BOOLEAN;
+        -: 1586:      }
+        -: 1587:    | primary_expression
+        -: 1588:      {
+    #####: 1589:        $$ = $1;
+        -: 1590:      }
+        -: 1591:    |'(' expression ')'
+        -: 1592:      {
+    #####: 1593:        $$ = $2;
+        -: 1594:      }
+        -: 1595:    ;
+        -: 1596:
+        -: 1597:
+        -: 1598:integer_set
+    #####: 1599:    : '(' integer_enumeration ')'  { $$ = INTEGER_SET_ENUMERATION; }
+    #####: 1600:    | range                        { $$ = INTEGER_SET_RANGE; }
+        -: 1601:    ;
+        -: 1602:
+        -: 1603:
+        -: 1604:range
+        -: 1605:    : '(' primary_expression _DOT_DOT_  primary_expression ')'
+        -: 1606:      {
+    #####: 1607:        int result = ERROR_SUCCESS;
+        -: 1608:
+    #####: 1609:        if ($2.type != EXPRESSION_TYPE_INTEGER)
+        -: 1610:        {
+    #####: 1611:          yr_compiler_set_error_extra_info(
+        -: 1612:              compiler, "wrong type for range's lower bound");
+    #####: 1613:          result = ERROR_WRONG_TYPE;
+        -: 1614:        }
+        -: 1615:
+    #####: 1616:        if ($4.type != EXPRESSION_TYPE_INTEGER)
+        -: 1617:        {
+    #####: 1618:          yr_compiler_set_error_extra_info(
+        -: 1619:              compiler, "wrong type for range's upper bound");
+    #####: 1620:          result = ERROR_WRONG_TYPE;
+        -: 1621:        }
+        -: 1622:
+    #####: 1623:        fail_if_error(result);
+        -: 1624:      }
+        -: 1625:    ;
+        -: 1626:
+        -: 1627:
+        -: 1628:integer_enumeration
+        -: 1629:    : primary_expression
+        -: 1630:      {
+    #####: 1631:        int result = ERROR_SUCCESS;
+        -: 1632:
+    #####: 1633:        if ($1.type != EXPRESSION_TYPE_INTEGER)
+        -: 1634:        {
+    #####: 1635:          yr_compiler_set_error_extra_info(
+        -: 1636:              compiler, "wrong type for enumeration item");
+    #####: 1637:          result = ERROR_WRONG_TYPE;
+        -: 1638:        }
+        -: 1639:
+    #####: 1640:        fail_if_error(result);
+        -: 1641:      }
+        -: 1642:    | integer_enumeration ',' primary_expression
+        -: 1643:      {
+    #####: 1644:        int result = ERROR_SUCCESS;
+        -: 1645:
+    #####: 1646:        if ($3.type != EXPRESSION_TYPE_INTEGER)
+        -: 1647:        {
+    #####: 1648:          yr_compiler_set_error_extra_info(
+        -: 1649:              compiler, "wrong type for enumeration item");
+    #####: 1650:          result = ERROR_WRONG_TYPE;
+        -: 1651:        }
+        -: 1652:
+    #####: 1653:        fail_if_error(result);
+        -: 1654:      }
+        -: 1655:    ;
+        -: 1656:
+        -: 1657:
+        -: 1658:string_set
+        -: 1659:    : '('
+        -: 1660:      {
+        -: 1661:        // Push end-of-list marker
+    #####: 1662:        yr_parser_emit_with_arg(yyscanner, OP_PUSH, UNDEFINED, NULL, NULL);
+        -: 1663:      }
+        -: 1664:      string_enumeration ')'
+        -: 1665:    | _THEM_
+        -: 1666:      {
+    #####: 1667:        fail_if_error(yr_parser_emit_with_arg(
+        -: 1668:            yyscanner, OP_PUSH, UNDEFINED, NULL, NULL));
+        -: 1669:
+    #####: 1670:        fail_if_error(yr_parser_emit_pushes_for_strings(
+        -: 1671:            yyscanner, "$*"));
+        -: 1672:      }
+        -: 1673:    ;
+        -: 1674:
+        -: 1675:
+        -: 1676:string_enumeration
+        -: 1677:    : string_enumeration_item
+        -: 1678:    | string_enumeration ',' string_enumeration_item
+        -: 1679:    ;
+        -: 1680:
+        -: 1681:
+        -: 1682:string_enumeration_item
+        -: 1683:    : _STRING_IDENTIFIER_
+        -: 1684:      {
+    #####: 1685:        int result = yr_parser_emit_pushes_for_strings(yyscanner, $1);
+    #####: 1686:        yr_free($1);
+        -: 1687:
+    #####: 1688:        fail_if_error(result);
+        -: 1689:      }
+        -: 1690:    | _STRING_IDENTIFIER_WITH_WILDCARD_
+        -: 1691:      {
+    #####: 1692:        int result = yr_parser_emit_pushes_for_strings(yyscanner, $1);
+    #####: 1693:        yr_free($1);
+        -: 1694:
+    #####: 1695:        fail_if_error(result);
+        -: 1696:      }
+        -: 1697:    ;
+        -: 1698:
+        -: 1699:
+        -: 1700:for_expression
+        -: 1701:    : primary_expression
+        -: 1702:      {
+    #####: 1703:        $$ = FOR_EXPRESSION_ANY;
+        -: 1704:      }
+        -: 1705:    | _ALL_
+        -: 1706:      {
+    #####: 1707:        yr_parser_emit_with_arg(yyscanner, OP_PUSH, UNDEFINED, NULL, NULL);
+    #####: 1708:        $$ = FOR_EXPRESSION_ALL;
+        -: 1709:      }
+        -: 1710:    | _ANY_
+        -: 1711:      {
+    #####: 1712:        yr_parser_emit_with_arg(yyscanner, OP_PUSH, 1, NULL, NULL);
+    #####: 1713:        $$ = FOR_EXPRESSION_ANY;
+        -: 1714:      }
+        -: 1715:    ;
+        -: 1716:
+        -: 1717:
+        -: 1718:primary_expression
+        -: 1719:    : '(' primary_expression ')'
+        -: 1720:      {
+    #####: 1721:        $$ = $2;
+        -: 1722:      }
+        -: 1723:    | _FILESIZE_
+        -: 1724:      {
+    #####: 1725:        fail_if_error(yr_parser_emit(
+        -: 1726:            yyscanner, OP_FILESIZE, NULL));
+        -: 1727:
+    #####: 1728:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1729:        $$.value.integer = UNDEFINED;
+        -: 1730:      }
+        -: 1731:    | _ENTRYPOINT_
+        -: 1732:      {
+    #####: 1733:        yywarning(yyscanner,
+        -: 1734:            "Using deprecated \"entrypoint\" keyword. Use the \"entry_point\" "
+        -: 1735:            "function from PE module instead.");
+        -: 1736:
+    #####: 1737:        fail_if_error(yr_parser_emit(
+        -: 1738:            yyscanner, OP_ENTRYPOINT, NULL));
+        -: 1739:
+    #####: 1740:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1741:        $$.value.integer = UNDEFINED;
+        -: 1742:      }
+        -: 1743:    | _INTEGER_FUNCTION_ '(' primary_expression ')'
+        -: 1744:      {
+    #####: 1745:        check_type($3, EXPRESSION_TYPE_INTEGER, "intXXXX or uintXXXX");
+        -: 1746:
+        -: 1747:        // _INTEGER_FUNCTION_ could be any of int8, int16, int32, uint8,
+        -: 1748:        // uint32, etc. $1 contains an index that added to OP_READ_INT results
+        -: 1749:        // in the proper OP_INTXX opcode.
+        -: 1750:
+    #####: 1751:        fail_if_error(yr_parser_emit(
+        -: 1752:            yyscanner, (uint8_t) (OP_READ_INT + $1), NULL));
+        -: 1753:
+    #####: 1754:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1755:        $$.value.integer = UNDEFINED;
+        -: 1756:      }
+        -: 1757:    | _NUMBER_
+        -: 1758:      {
+    #####: 1759:        fail_if_error(yr_parser_emit_with_arg(
+        -: 1760:            yyscanner, OP_PUSH, $1, NULL, NULL));
+        -: 1761:
+    #####: 1762:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1763:        $$.value.integer = $1;
+        -: 1764:      }
+        -: 1765:    | _DOUBLE_
+        -: 1766:      {
+    #####: 1767:        fail_if_error(yr_parser_emit_with_arg_double(
+        -: 1768:            yyscanner, OP_PUSH, $1, NULL, NULL));
+        -: 1769:
+    #####: 1770:        $$.type = EXPRESSION_TYPE_FLOAT;
+        -: 1771:      }
+        -: 1772:    | _TEXT_STRING_
+        -: 1773:      {
+        -: 1774:        SIZED_STRING* sized_string;
+        -: 1775:
+    #####: 1776:        int result = yr_arena_write_data(
+        -: 1777:            compiler->sz_arena,
+    #####: 1778:            $1,
+    #####: 1779:            $1->length + sizeof(SIZED_STRING),
+        -: 1780:            (void**) &sized_string);
+        -: 1781:
+    #####: 1782:        yr_free($1);
+        -: 1783:
+    #####: 1784:        if (result == ERROR_SUCCESS)
+    #####: 1785:          result = yr_parser_emit_with_arg_reloc(
+        -: 1786:              yyscanner,
+        -: 1787:              OP_PUSH,
+        -: 1788:              sized_string,
+        -: 1789:              NULL,
+        -: 1790:              NULL);
+        -: 1791:
+    #####: 1792:        fail_if_error(result);
+        -: 1793:
+    #####: 1794:        $$.type = EXPRESSION_TYPE_STRING;
+    #####: 1795:        $$.value.sized_string = sized_string;
+        -: 1796:      }
+        -: 1797:    | _STRING_COUNT_
+        -: 1798:      {
+    #####: 1799:        int result = yr_parser_reduce_string_identifier(
+    #####: 1800:            yyscanner, $1, OP_COUNT, UNDEFINED);
+        -: 1801:
+    #####: 1802:        yr_free($1);
+        -: 1803:
+    #####: 1804:        fail_if_error(result);
+        -: 1805:
+    #####: 1806:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1807:        $$.value.integer = UNDEFINED;
+        -: 1808:      }
+        -: 1809:    | _STRING_OFFSET_ '[' primary_expression ']'
+        -: 1810:      {
+    #####: 1811:        int result = yr_parser_reduce_string_identifier(
+    #####: 1812:            yyscanner, $1, OP_OFFSET, UNDEFINED);
+        -: 1813:
+    #####: 1814:        yr_free($1);
+        -: 1815:
+    #####: 1816:        fail_if_error(result);
+        -: 1817:
+    #####: 1818:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1819:        $$.value.integer = UNDEFINED;
+        -: 1820:      }
+        -: 1821:    | _STRING_OFFSET_
+        -: 1822:      {
+    #####: 1823:        int result = yr_parser_emit_with_arg(
+        -: 1824:            yyscanner, OP_PUSH, 1, NULL, NULL);
+        -: 1825:
+    #####: 1826:        if (result == ERROR_SUCCESS)
+    #####: 1827:          result = yr_parser_reduce_string_identifier(
+    #####: 1828:              yyscanner, $1, OP_OFFSET, UNDEFINED);
+        -: 1829:
+    #####: 1830:        yr_free($1);
+        -: 1831:
+    #####: 1832:        fail_if_error(result);
+        -: 1833:
+    #####: 1834:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1835:        $$.value.integer = UNDEFINED;
+        -: 1836:      }
+        -: 1837:    | _STRING_LENGTH_ '[' primary_expression ']'
+        -: 1838:      {
+    #####: 1839:        int result = yr_parser_reduce_string_identifier(
+    #####: 1840:            yyscanner, $1, OP_LENGTH, UNDEFINED);
+        -: 1841:
+    #####: 1842:        yr_free($1);
+        -: 1843:
+    #####: 1844:        fail_if_error(result);
+        -: 1845:
+    #####: 1846:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1847:        $$.value.integer = UNDEFINED;
+        -: 1848:      }
+        -: 1849:    | _STRING_LENGTH_
+        -: 1850:      {
+    #####: 1851:        int result = yr_parser_emit_with_arg(
+        -: 1852:            yyscanner, OP_PUSH, 1, NULL, NULL);
+        -: 1853:
+    #####: 1854:        if (result == ERROR_SUCCESS)
+    #####: 1855:          result = yr_parser_reduce_string_identifier(
+    #####: 1856:              yyscanner, $1, OP_LENGTH, UNDEFINED);
+        -: 1857:
+    #####: 1858:        yr_free($1);
+        -: 1859:
+    #####: 1860:        fail_if_error(result);
+        -: 1861:
+    #####: 1862:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1863:        $$.value.integer = UNDEFINED;
+        -: 1864:      }
+        -: 1865:    | identifier
+        -: 1866:      {
+    #####: 1867:        int result = ERROR_SUCCESS;
+        -: 1868:
+    #####: 1869:        if ($1.type == EXPRESSION_TYPE_INTEGER)  // loop identifier
+        -: 1870:        {
+    #####: 1871:          $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1872:          $$.value.integer = UNDEFINED;
+        -: 1873:        }
+    #####: 1874:        else if ($1.type == EXPRESSION_TYPE_BOOLEAN)  // rule identifier
+        -: 1875:        {
+    #####: 1876:          $$.type = EXPRESSION_TYPE_BOOLEAN;
+    #####: 1877:          $$.value.integer = UNDEFINED;
+        -: 1878:        }
+    #####: 1879:        else if ($1.type == EXPRESSION_TYPE_OBJECT)
+        -: 1880:        {
+    #####: 1881:          result = yr_parser_emit(
+        -: 1882:              yyscanner, OP_OBJ_VALUE, NULL);
+        -: 1883:
+    #####: 1884:          switch($1.value.object->type)
+        -: 1885:          {
+    #####: 1886:            case OBJECT_TYPE_INTEGER:
+    #####: 1887:              $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1888:              $$.value.integer = UNDEFINED;
+    #####: 1889:              break;
+    #####: 1890:            case OBJECT_TYPE_FLOAT:
+    #####: 1891:              $$.type = EXPRESSION_TYPE_FLOAT;
+    #####: 1892:              break;
+    #####: 1893:            case OBJECT_TYPE_STRING:
+    #####: 1894:              $$.type = EXPRESSION_TYPE_STRING;
+    #####: 1895:              $$.value.sized_string = NULL;
+    #####: 1896:              break;
+    #####: 1897:            default:
+    #####: 1898:              yr_compiler_set_error_extra_info_fmt(
+        -: 1899:                  compiler,
+        -: 1900:                  "wrong usage of identifier \"%s\"",
+        -: 1901:                  $1.identifier);
+    #####: 1902:              result = ERROR_WRONG_TYPE;
+        -: 1903:          }
+        -: 1904:        }
+        -: 1905:        else
+        -: 1906:        {
+    #####: 1907:          assert(false);
+        -: 1908:        }
+        -: 1909:
+    #####: 1910:        fail_if_error(result);
+        -: 1911:      }
+        -: 1912:    | '-' primary_expression %prec UNARY_MINUS
+        -: 1913:      {
+    #####: 1914:        int result = ERROR_SUCCESS;
+        -: 1915:
+    #####: 1916:        check_type($2, EXPRESSION_TYPE_INTEGER | EXPRESSION_TYPE_FLOAT, "-");
+        -: 1917:
+    #####: 1918:        if ($2.type == EXPRESSION_TYPE_INTEGER)
+        -: 1919:        {
+    #####: 1920:          $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 1921:          $$.value.integer = ($2.value.integer == UNDEFINED) ?
+    #####: 1922:              UNDEFINED : -($2.value.integer);
+    #####: 1923:          result = yr_parser_emit(yyscanner, OP_INT_MINUS, NULL);
+        -: 1924:        }
+    #####: 1925:        else if ($2.type == EXPRESSION_TYPE_FLOAT)
+        -: 1926:        {
+    #####: 1927:          $$.type = EXPRESSION_TYPE_FLOAT;
+    #####: 1928:          result = yr_parser_emit(yyscanner, OP_DBL_MINUS, NULL);
+        -: 1929:        }
+        -: 1930:
+    #####: 1931:        fail_if_error(result);
+        -: 1932:      }
+        -: 1933:    | primary_expression '+' primary_expression
+        -: 1934:      {
+    #####: 1935:        int result = yr_parser_reduce_operation(
+    #####: 1936:            yyscanner, "+", $1, $3);
+        -: 1937:
+    #####: 1938:        if ($1.type == EXPRESSION_TYPE_INTEGER &&
+    #####: 1939:            $3.type == EXPRESSION_TYPE_INTEGER)
+    #####: 1940:        {
+    #####: 1941:          int64_t i1 = $1.value.integer;
+    #####: 1942:          int64_t i2 = $3.value.integer;
+        -: 1943:
+    #####: 1944:          if (!IS_UNDEFINED(i1) && !IS_UNDEFINED(i2) &&
+        -: 1945:              (
+    #####: 1946:                (i2 > 0 && i1 > INT64_MAX - i2) ||
+    #####: 1947:                (i2 < 0 && i1 < INT64_MIN - i2)
+        -: 1948:              ))
+        -: 1949:          {
+    #####: 1950:            yr_compiler_set_error_extra_info_fmt(
+        -: 1951:                compiler, "%" PRId64 " + %" PRId64, i1, i2);
+        -: 1952:
+    #####: 1953:            result = ERROR_INTEGER_OVERFLOW;
+        -: 1954:          }
+        -: 1955:          else
+        -: 1956:          {
+    #####: 1957:            $$.value.integer = OPERATION(+, i1, i2);
+    #####: 1958:            $$.type = EXPRESSION_TYPE_INTEGER;
+        -: 1959:          }
+        -: 1960:        }
+        -: 1961:        else
+        -: 1962:        {
+    #####: 1963:          $$.type = EXPRESSION_TYPE_FLOAT;
+        -: 1964:        }
+        -: 1965:
+    #####: 1966:        fail_if_error(result);
+        -: 1967:      }
+        -: 1968:    | primary_expression '-' primary_expression
+        -: 1969:      {
+    #####: 1970:        int result = yr_parser_reduce_operation(
+    #####: 1971:            yyscanner, "-", $1, $3);
+        -: 1972:
+    #####: 1973:        if ($1.type == EXPRESSION_TYPE_INTEGER &&
+    #####: 1974:            $3.type == EXPRESSION_TYPE_INTEGER)
+    #####: 1975:        {
+    #####: 1976:          int64_t i1 = $1.value.integer;
+    #####: 1977:          int64_t i2 = $3.value.integer;
+        -: 1978:
+    #####: 1979:          if (!IS_UNDEFINED(i1) && !IS_UNDEFINED(i2) &&
+        -: 1980:              (
+    #####: 1981:                (i2 < 0 && i1 > INT64_MAX + i2) ||
+    #####: 1982:                (i2 > 0 && i1 < INT64_MIN + i2)
+        -: 1983:              ))
+        -: 1984:          {
+    #####: 1985:            yr_compiler_set_error_extra_info_fmt(
+        -: 1986:                compiler, "%" PRId64 " - %" PRId64, i1, i2);
+        -: 1987:
+    #####: 1988:            result = ERROR_INTEGER_OVERFLOW;
+        -: 1989:          }
+        -: 1990:          else
+        -: 1991:          {
+    #####: 1992:            $$.value.integer = OPERATION(-, i1, i2);
+    #####: 1993:            $$.type = EXPRESSION_TYPE_INTEGER;
+        -: 1994:          }
+        -: 1995:        }
+        -: 1996:        else
+        -: 1997:        {
+    #####: 1998:          $$.type = EXPRESSION_TYPE_FLOAT;
+        -: 1999:        }
+        -: 2000:
+    #####: 2001:        fail_if_error(result);
+        -: 2002:      }
+        -: 2003:    | primary_expression '*' primary_expression
+        -: 2004:      {
+    #####: 2005:        int result = yr_parser_reduce_operation(
+    #####: 2006:            yyscanner, "*", $1, $3);
+        -: 2007:
+    #####: 2008:        if ($1.type == EXPRESSION_TYPE_INTEGER &&
+    #####: 2009:            $3.type == EXPRESSION_TYPE_INTEGER)
+    #####: 2010:        {
+    #####: 2011:          int64_t i1 = $1.value.integer;
+    #####: 2012:          int64_t i2 = $3.value.integer;
+        -: 2013:
+    #####: 2014:          if (!IS_UNDEFINED(i1) && !IS_UNDEFINED(i2) &&
+        -: 2015:              (
+    #####: 2016:                i2 != 0 && llabs(i1) > INT64_MAX / llabs(i2)
+        -: 2017:              ))
+        -: 2018:          {
+    #####: 2019:            yr_compiler_set_error_extra_info_fmt(
+        -: 2020:                compiler, "%" PRId64 " * %" PRId64, i1, i2);
+        -: 2021:
+    #####: 2022:            result = ERROR_INTEGER_OVERFLOW;
+        -: 2023:          }
+        -: 2024:          else
+        -: 2025:          {
+    #####: 2026:            $$.value.integer = OPERATION(*, i1, i2);
+    #####: 2027:            $$.type = EXPRESSION_TYPE_INTEGER;
+        -: 2028:          }
+        -: 2029:        }
+        -: 2030:        else
+        -: 2031:        {
+    #####: 2032:          $$.type = EXPRESSION_TYPE_FLOAT;
+        -: 2033:        }
+        -: 2034:
+    #####: 2035:        fail_if_error(result);
+        -: 2036:      }
+        -: 2037:    | primary_expression '\\' primary_expression
+        -: 2038:      {
+    #####: 2039:        int result = yr_parser_reduce_operation(
+    #####: 2040:            yyscanner, "\\", $1, $3);
+        -: 2041:
+    #####: 2042:        if ($1.type == EXPRESSION_TYPE_INTEGER &&
+    #####: 2043:            $3.type == EXPRESSION_TYPE_INTEGER)
+        -: 2044:        {
+    #####: 2045:          if ($3.value.integer != 0)
+        -: 2046:          {
+    #####: 2047:            $$.value.integer = OPERATION(/, $1.value.integer, $3.value.integer);
+    #####: 2048:            $$.type = EXPRESSION_TYPE_INTEGER;
+        -: 2049:          }
+        -: 2050:          else
+        -: 2051:          {
+    #####: 2052:            result = ERROR_DIVISION_BY_ZERO;
+        -: 2053:          }
+        -: 2054:        }
+        -: 2055:        else
+        -: 2056:        {
+    #####: 2057:          $$.type = EXPRESSION_TYPE_FLOAT;
+        -: 2058:        }
+        -: 2059:
+    #####: 2060:        fail_if_error(result);
+        -: 2061:      }
+        -: 2062:    | primary_expression '%' primary_expression
+        -: 2063:      {
+    #####: 2064:        check_type($1, EXPRESSION_TYPE_INTEGER, "%");
+    #####: 2065:        check_type($3, EXPRESSION_TYPE_INTEGER, "%");
+        -: 2066:
+    #####: 2067:        fail_if_error(yr_parser_emit(yyscanner, OP_MOD, NULL));
+        -: 2068:
+    #####: 2069:        if ($3.value.integer != 0)
+        -: 2070:        {
+    #####: 2071:          $$.value.integer = OPERATION(%, $1.value.integer, $3.value.integer);
+    #####: 2072:          $$.type = EXPRESSION_TYPE_INTEGER;
+        -: 2073:        }
+        -: 2074:        else
+        -: 2075:        {
+    #####: 2076:          fail_if_error(ERROR_DIVISION_BY_ZERO);
+        -: 2077:        }
+        -: 2078:      }
+        -: 2079:    | primary_expression '^' primary_expression
+        -: 2080:      {
+    #####: 2081:        check_type($1, EXPRESSION_TYPE_INTEGER, "^");
+    #####: 2082:        check_type($3, EXPRESSION_TYPE_INTEGER, "^");
+        -: 2083:
+    #####: 2084:        fail_if_error(yr_parser_emit(yyscanner, OP_BITWISE_XOR, NULL));
+        -: 2085:
+    #####: 2086:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 2087:        $$.value.integer = OPERATION(^, $1.value.integer, $3.value.integer);
+        -: 2088:      }
+        -: 2089:    | primary_expression '&' primary_expression
+        -: 2090:      {
+    #####: 2091:        check_type($1, EXPRESSION_TYPE_INTEGER, "^");
+    #####: 2092:        check_type($3, EXPRESSION_TYPE_INTEGER, "^");
+        -: 2093:
+    #####: 2094:        fail_if_error(yr_parser_emit(yyscanner, OP_BITWISE_AND, NULL));
+        -: 2095:
+    #####: 2096:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 2097:        $$.value.integer = OPERATION(&, $1.value.integer, $3.value.integer);
+        -: 2098:      }
+        -: 2099:    | primary_expression '|' primary_expression
+        -: 2100:      {
+    #####: 2101:        check_type($1, EXPRESSION_TYPE_INTEGER, "|");
+    #####: 2102:        check_type($3, EXPRESSION_TYPE_INTEGER, "|");
+        -: 2103:
+    #####: 2104:        fail_if_error(yr_parser_emit(yyscanner, OP_BITWISE_OR, NULL));
+        -: 2105:
+    #####: 2106:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 2107:        $$.value.integer = OPERATION(|, $1.value.integer, $3.value.integer);
+        -: 2108:      }
+        -: 2109:    | '~' primary_expression
+        -: 2110:      {
+    #####: 2111:        check_type($2, EXPRESSION_TYPE_INTEGER, "~");
+        -: 2112:
+    #####: 2113:        fail_if_error(yr_parser_emit(yyscanner, OP_BITWISE_NOT, NULL));
+        -: 2114:
+    #####: 2115:        $$.type = EXPRESSION_TYPE_INTEGER;
+    #####: 2116:        $$.value.integer = ($2.value.integer == UNDEFINED) ?
+    #####: 2117:            UNDEFINED : ~($2.value.integer);
+        -: 2118:      }
+        -: 2119:    | primary_expression _SHIFT_LEFT_ primary_expression
+        -: 2120:      {
+        -: 2121:        int result;
+        -: 2122:
+    #####: 2123:        check_type($1, EXPRESSION_TYPE_INTEGER, "<<");
+    #####: 2124:        check_type($3, EXPRESSION_TYPE_INTEGER, "<<");
+        -: 2125:
+    #####: 2126:        result = yr_parser_emit(yyscanner, OP_SHL, NULL);
+        -: 2127:
+    #####: 2128:        if (!IS_UNDEFINED($3.value.integer) && $3.value.integer < 0)
+    #####: 2129:          result = ERROR_INVALID_OPERAND;
+    #####: 2130:        else if (!IS_UNDEFINED($3.value.integer) && $3.value.integer >= 64)
+    #####: 2131:          $$.value.integer = 0;
+        -: 2132:        else
+    #####: 2133:          $$.value.integer = OPERATION(<<, $1.value.integer, $3.value.integer);
+        -: 2134:
+    #####: 2135:        $$.type = EXPRESSION_TYPE_INTEGER;
+        -: 2136:
+    #####: 2137:        fail_if_error(result);
+        -: 2138:      }
+        -: 2139:    | primary_expression _SHIFT_RIGHT_ primary_expression
+        -: 2140:      {
+        -: 2141:        int result;
+        -: 2142:
+    #####: 2143:        check_type($1, EXPRESSION_TYPE_INTEGER, ">>");
+    #####: 2144:        check_type($3, EXPRESSION_TYPE_INTEGER, ">>");
+        -: 2145:
+    #####: 2146:        result = yr_parser_emit(yyscanner, OP_SHR, NULL);
+        -: 2147:
+    #####: 2148:        if (!IS_UNDEFINED($3.value.integer) && $3.value.integer < 0)
+    #####: 2149:          result = ERROR_INVALID_OPERAND;
+    #####: 2150:        else if (!IS_UNDEFINED($3.value.integer) && $3.value.integer >= 64)
+    #####: 2151:          $$.value.integer = 0;
+        -: 2152:        else
+    #####: 2153:          $$.value.integer = OPERATION(<<, $1.value.integer, $3.value.integer);
+        -: 2154:
+    #####: 2155:        $$.type = EXPRESSION_TYPE_INTEGER;
+        -: 2156:
+    #####: 2157:        fail_if_error(result);
+        -: 2158:      }
+        -: 2159:    | regexp
+        -: 2160:      {
+    #####: 2161:        $$ = $1;
+        -: 2162:      }
+        -: 2163:    ;
+        -: 2164:
+        -: 2165:%%

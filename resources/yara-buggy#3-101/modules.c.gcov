@@ -1,0 +1,223 @@
+        -:    0:Source:modules.c
+        -:    0:Graph:/home/workspace/libyara/modules.gcno
+        -:    0:Data:/home/workspace/libyara/modules.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2014. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <yara/exec.h>
+        -:   31:#include <yara/modules.h>
+        -:   32:#include <yara/libyara.h>
+        -:   33:
+        -:   34:
+        -:   35:#define MODULE(name) \
+        -:   36:    int name ## __declarations(YR_OBJECT* module); \
+        -:   37:    int name ## __load(YR_SCAN_CONTEXT* context, \
+        -:   38:                       YR_OBJECT* module, \
+        -:   39:                       void* module_data, \
+        -:   40:                       size_t module_data_size); \
+        -:   41:    int name ## __unload(YR_OBJECT* main_structure); \
+        -:   42:    int name ## __initialize(YR_MODULE* module); \
+        -:   43:    int name ## __finalize(YR_MODULE* module);
+        -:   44:
+        -:   45:
+        -:   46:#include <modules/module_list>
+        -:   47:
+        -:   48:#undef MODULE
+        -:   49:
+        -:   50:
+        -:   51:#define MODULE(name) \
+        -:   52:    { \
+        -:   53:      #name, \
+        -:   54:      name##__declarations, \
+        -:   55:      name##__load, \
+        -:   56:      name##__unload, \
+        -:   57:      name##__initialize, \
+        -:   58:      name##__finalize \
+        -:   59:    },
+        -:   60:
+        -:   61:YR_MODULE yr_modules_table[] =
+        -:   62:{
+        -:   63:  #include <modules/module_list>
+        -:   64:};
+        -:   65:
+        -:   66:#undef MODULE
+        -:   67:
+        -:   68:
+        6:   69:int yr_modules_initialize()
+        -:   70:{
+        -:   71:  int i;
+        -:   72:
+       42:   73:  for (i = 0; i < sizeof(yr_modules_table) / sizeof(YR_MODULE); i++)
+        -:   74:  {
+       36:   75:    int result = yr_modules_table[i].initialize(&yr_modules_table[i]);
+        -:   76:
+       36:   77:    if (result != ERROR_SUCCESS)
+    #####:   78:      return result;
+        -:   79:  }
+        -:   80:
+        6:   81:  return ERROR_SUCCESS;
+        -:   82:}
+        -:   83:
+        -:   84:
+        4:   85:int yr_modules_finalize()
+        -:   86:{
+        -:   87:  int i;
+        -:   88:
+       28:   89:  for (i = 0; i < sizeof(yr_modules_table) / sizeof(YR_MODULE); i++)
+        -:   90:  {
+       24:   91:    int result = yr_modules_table[i].finalize(&yr_modules_table[i]);
+        -:   92:
+       24:   93:    if (result != ERROR_SUCCESS)
+    #####:   94:      return result;
+        -:   95:  }
+        -:   96:
+        4:   97:  return ERROR_SUCCESS;
+        -:   98:}
+        -:   99:
+        -:  100:
+    #####:  101:int yr_modules_do_declarations(
+        -:  102:    const char* module_name,
+        -:  103:    YR_OBJECT* main_structure)
+        -:  104:{
+        -:  105:  int i;
+        -:  106:
+    #####:  107:  for (i = 0; i < sizeof(yr_modules_table) / sizeof(YR_MODULE); i++)
+        -:  108:  {
+    #####:  109:    if (strcmp(yr_modules_table[i].name, module_name) == 0)
+    #####:  110:      return yr_modules_table[i].declarations(main_structure);
+        -:  111:  }
+        -:  112:
+    #####:  113:  return ERROR_UNKNOWN_MODULE;
+        -:  114:}
+        -:  115:
+        -:  116:
+    #####:  117:int yr_modules_load(
+        -:  118:    const char* module_name,
+        -:  119:    YR_SCAN_CONTEXT* context)
+        -:  120:{
+        -:  121:  int i, result;
+        -:  122:
+        -:  123:  YR_MODULE_IMPORT mi;
+        -:  124:
+    #####:  125:  YR_OBJECT* module_structure = (YR_OBJECT*) yr_hash_table_lookup(
+        -:  126:      context->objects_table,
+        -:  127:      module_name,
+        -:  128:      NULL);
+        -:  129:
+        -:  130:  // if module_structure != NULL, the module was already
+        -:  131:  // loaded, return successfully without doing nothing.
+        -:  132:
+    #####:  133:  if (module_structure != NULL)
+    #####:  134:    return ERROR_SUCCESS;
+        -:  135:
+        -:  136:  // not loaded yet
+        -:  137:
+    #####:  138:  FAIL_ON_ERROR(yr_object_create(
+        -:  139:      OBJECT_TYPE_STRUCTURE,
+        -:  140:      module_name,
+        -:  141:      NULL,
+        -:  142:      &module_structure));
+        -:  143:
+    #####:  144:  mi.module_name = module_name;
+    #####:  145:  mi.module_data = NULL;
+    #####:  146:  mi.module_data_size = 0;
+        -:  147:
+    #####:  148:  result = context->callback(
+        -:  149:      CALLBACK_MSG_IMPORT_MODULE,
+        -:  150:      &mi,
+        -:  151:      context->user_data);
+        -:  152:
+    #####:  153:  if (result == CALLBACK_ERROR)
+        -:  154:  {
+    #####:  155:    yr_object_destroy(module_structure);
+    #####:  156:    return ERROR_CALLBACK_ERROR;
+        -:  157:  }
+        -:  158:
+    #####:  159:  FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  160:      yr_modules_do_declarations(module_name, module_structure),
+        -:  161:      yr_object_destroy(module_structure));
+        -:  162:
+    #####:  163:  FAIL_ON_ERROR_WITH_CLEANUP(
+        -:  164:      yr_hash_table_add(
+        -:  165:          context->objects_table,
+        -:  166:          module_name,
+        -:  167:          NULL,
+        -:  168:          module_structure),
+        -:  169:      yr_object_destroy(module_structure));
+        -:  170:
+    #####:  171:  for (i = 0; i < sizeof(yr_modules_table) / sizeof(YR_MODULE); i++)
+        -:  172:  {
+    #####:  173:    if (strcmp(yr_modules_table[i].name, module_name) == 0)
+        -:  174:    {
+    #####:  175:      result = yr_modules_table[i].load(
+        -:  176:          context,
+        -:  177:          module_structure,
+        -:  178:          mi.module_data,
+        -:  179:          mi.module_data_size);
+        -:  180:
+    #####:  181:      if (result != ERROR_SUCCESS)
+    #####:  182:        return result;
+        -:  183:    }
+        -:  184:  }
+        -:  185:
+    #####:  186:  result = context->callback(
+        -:  187:      CALLBACK_MSG_MODULE_IMPORTED,
+        -:  188:      module_structure,
+        -:  189:      context->user_data);
+        -:  190:
+    #####:  191:  if (result == CALLBACK_ERROR)
+    #####:  192:    return ERROR_CALLBACK_ERROR;
+        -:  193:
+    #####:  194:  return ERROR_SUCCESS;
+        -:  195:}
+        -:  196:
+        -:  197:
+    #####:  198:int yr_modules_unload_all(
+        -:  199:    YR_SCAN_CONTEXT* context)
+        -:  200:{
+        -:  201:  int i;
+        -:  202:
+    #####:  203:  for (i = 0; i < sizeof(yr_modules_table) / sizeof(YR_MODULE); i++)
+        -:  204:  {
+    #####:  205:    YR_OBJECT* module_structure = (YR_OBJECT*) yr_hash_table_remove(
+        -:  206:        context->objects_table,
+    #####:  207:        yr_modules_table[i].name,
+        -:  208:        NULL);
+        -:  209:
+    #####:  210:    if (module_structure != NULL)
+        -:  211:    {
+    #####:  212:      yr_modules_table[i].unload(module_structure);
+    #####:  213:      yr_object_destroy(module_structure);
+        -:  214:    }
+        -:  215:  }
+        -:  216:
+    #####:  217:  return ERROR_SUCCESS;
+        -:  218:}

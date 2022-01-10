@@ -49,10 +49,7 @@ if __name__ == "__main__":
     print(sbfl.ranks(method='max'))
 ```
 
-See the full example usage of this engine in [./main.py](./main.py).
-```bash
-python main.py
-```
+See the full example usage of this engine in [./main.ipynb](./main.ipynb).
 
 ## Running tests
 - If you implement new functionality, please add the test cases for it.

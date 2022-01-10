@@ -1,0 +1,149 @@
+        -:    0:Source:stopwatch.c
+        -:    0:Graph:/home/workspace/libyara/stopwatch.gcno
+        -:    0:Data:/home/workspace/libyara/stopwatch.gcda
+        -:    0:Runs:7
+        -:    0:Programs:7
+        -:    1:/*
+        -:    2:Copyright (c) 2017. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <time.h>
+        -:   31:
+        -:   32:#include <yara/stopwatch.h>
+        -:   33:
+        -:   34:#if defined(_WIN32)
+        -:   35:
+        -:   36:void yr_stopwatch_start(
+        -:   37:    YR_STOPWATCH* sw)
+        -:   38:{
+        -:   39:  QueryPerformanceFrequency(&sw->frequency);
+        -:   40:  QueryPerformanceCounter(&sw->start);
+        -:   41:}
+        -:   42:
+        -:   43:
+        -:   44:uint64_t yr_stopwatch_elapsed_us(
+        -:   45:    YR_STOPWATCH* sw)
+        -:   46:{
+        -:   47:  LARGE_INTEGER li;
+        -:   48:
+        -:   49:  QueryPerformanceCounter(&li);
+        -:   50:
+        -:   51:  return (li.QuadPart - sw->start.QuadPart) * 1000000L / sw->frequency.QuadPart;
+        -:   52:}
+        -:   53:
+        -:   54:
+        -:   55:#elif defined(__MACH__)
+        -:   56:
+        -:   57:void yr_stopwatch_start(
+        -:   58:    YR_STOPWATCH* sw)
+        -:   59:{
+        -:   60:  mach_timebase_info(&sw->timebase);
+        -:   61:  sw->start = mach_absolute_time();
+        -:   62:}
+        -:   63:
+        -:   64:
+        -:   65:uint64_t yr_stopwatch_elapsed_us(
+        -:   66:    YR_STOPWATCH* sw)
+        -:   67:{
+        -:   68:  uint64_t now;
+        -:   69:
+        -:   70:  now = mach_absolute_time();
+        -:   71:  return (now - sw->start) * sw->timebase.numer /
+        -:   72:         (sw->timebase.denom * 1000ULL);
+        -:   73:}
+        -:   74:
+        -:   75:
+        -:   76:#elif defined(HAVE_CLOCK_GETTIME)
+        -:   77:
+        -:   78:#define timespecsub(tsp, usp, vsp)                      \
+        -:   79:do {                                                    \
+        -:   80:  (vsp)->tv_sec = (tsp)->tv_sec - (usp)->tv_sec;        \
+        -:   81:  (vsp)->tv_nsec = (tsp)->tv_nsec - (usp)->tv_nsec;     \
+        -:   82:  if ((vsp)->tv_nsec < 0) {                             \
+        -:   83:    (vsp)->tv_sec--;                                    \
+        -:   84:    (vsp)->tv_nsec += 1000000000L;                      \
+        -:   85:  }                                                     \
+        -:   86:} while (0)
+        -:   87:
+        -:   88:
+    #####:   89:void yr_stopwatch_start(
+        -:   90:    YR_STOPWATCH* stopwatch)
+        -:   91:{
+    #####:   92:  clock_gettime(CLOCK_MONOTONIC, &stopwatch->ts_start);
+    #####:   93:}
+        -:   94:
+        -:   95:
+    #####:   96:uint64_t yr_stopwatch_elapsed_us(
+        -:   97:    YR_STOPWATCH* stopwatch)
+        -:   98:{
+        -:   99:  struct timespec ts_stop;
+        -:  100:  struct timespec ts_elapsed;
+        -:  101:
+    #####:  102:  clock_gettime(CLOCK_MONOTONIC, &ts_stop);
+    #####:  103:  timespecsub(&ts_stop, &stopwatch->ts_start, &ts_elapsed);
+    #####:  104:  return ts_elapsed.tv_sec * 1000000L + ts_elapsed.tv_nsec / 1000;
+        -:  105:}
+        -:  106:
+        -:  107:
+        -:  108:#else
+        -:  109:
+        -:  110:#include <sys/time.h>
+        -:  111:
+        -:  112:#define timevalsub(tvp, uvp, vvp)                       \
+        -:  113:do {                                                    \
+        -:  114:  (vvp)->tv_sec = (tvp)->tv_sec - (uvp)->tv_sec;        \
+        -:  115:  (vvp)->tv_usec = (tvp)->tv_usec - (uvp)->tv_usec;     \
+        -:  116:  if ((vvp)->tv_usec < 0) {                             \
+        -:  117:    (vvp)->tv_sec--;                                    \
+        -:  118:    (vvp)->tv_usec += 1000000L;                         \
+        -:  119:  }                                                     \
+        -:  120:} while (0)
+        -:  121:
+        -:  122:
+        -:  123:void yr_stopwatch_start(
+        -:  124:    YR_STOPWATCH* stopwatch)
+        -:  125:{
+        -:  126:  gettimeofday(&stopwatch->tv_start, NULL);
+        -:  127:}
+        -:  128:
+        -:  129:
+        -:  130:uint64_t yr_stopwatch_elapsed_us(
+        -:  131:    YR_STOPWATCH* stopwatch)
+        -:  132:{
+        -:  133:  struct timeval tv_stop;
+        -:  134:  struct timeval tv_elapsed;
+        -:  135:
+        -:  136:  gettimeofday(&tv_stop, NULL);
+        -:  137:  timevalsub(&tv_stop, &stopwatch->tv_start, &tv_elapsed);
+        -:  138:  return tv_elapsed.tv_sec * 1000000L + tv_elapsed.tv_usec;
+        -:  139:}
+        -:  140:
+        -:  141:
+        -:  142:
+        -:  143:
+        -:  144:#endif

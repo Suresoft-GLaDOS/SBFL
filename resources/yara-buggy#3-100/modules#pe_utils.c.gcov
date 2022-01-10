@@ -1,0 +1,1934 @@
+        -:    0:Source:modules/pe_utils.c
+        -:    0:Graph:/home/workspace/libyara/modules/pe_utils.gcno
+        -:    0:Data:/home/workspace/libyara/modules/pe_utils.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2014-2015. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <stdio.h>
+        -:   31:
+        -:   32:#include <string.h>
+        -:   33:
+        -:   34:#include <yara/endian.h>
+        -:   35:#include <yara/utils.h>
+        -:   36:#include <yara/strutils.h>
+        -:   37:#include <yara/mem.h>
+        -:   38:#include <yara/integers.h>
+        -:   39:#include <yara/pe_utils.h>
+        -:   40:#include <yara/pe.h>
+        -:   41:
+        -:   42:#if HAVE_LIBCRYPTO
+        -:   43:#include <openssl/asn1.h>
+        -:   44:#endif
+        -:   45:
+    #####:   46:PIMAGE_NT_HEADERS32 pe_get_header(
+        -:   47:    const uint8_t* data,
+        -:   48:    size_t data_size)
+        -:   49:{
+        -:   50:  PIMAGE_DOS_HEADER mz_header;
+        -:   51:  PIMAGE_NT_HEADERS32 pe_header;
+        -:   52:
+    #####:   53:  size_t headers_size = 0;
+        -:   54:
+    #####:   55:  if (data_size < sizeof(IMAGE_DOS_HEADER))
+    #####:   56:    return NULL;
+        -:   57:
+    #####:   58:  mz_header = (PIMAGE_DOS_HEADER) data;
+        -:   59:
+    #####:   60:  if (yr_le16toh(mz_header->e_magic) != IMAGE_DOS_SIGNATURE)
+    #####:   61:    return NULL;
+        -:   62:
+    #####:   63:  if (yr_le32toh(mz_header->e_lfanew) < 0)
+    #####:   64:    return NULL;
+        -:   65:
+    #####:   66:  headers_size = yr_le32toh(mz_header->e_lfanew) + \
+        -:   67:                 sizeof(pe_header->Signature) + \
+        -:   68:                 sizeof(IMAGE_FILE_HEADER);
+        -:   69:
+    #####:   70:  if (data_size < headers_size)
+    #####:   71:    return NULL;
+        -:   72:
+    #####:   73:  pe_header = (PIMAGE_NT_HEADERS32) (data + yr_le32toh(mz_header->e_lfanew));
+        -:   74:
+    #####:   75:  if (yr_le32toh(pe_header->Signature) != IMAGE_NT_SIGNATURE)
+    #####:   76:    return NULL;
+        -:   77:
+    #####:   78:  if (data_size < headers_size + sizeof(IMAGE_OPTIONAL_HEADER32))
+    #####:   79:    return NULL;
+        -:   80:
+    #####:   81:  if (pe_header->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+    #####:   82:    headers_size += sizeof(IMAGE_OPTIONAL_HEADER64);
+        -:   83:  else
+    #####:   84:    headers_size += sizeof(IMAGE_OPTIONAL_HEADER32);
+        -:   85:
+    #####:   86:  if (data_size < headers_size)
+    #####:   87:    return NULL;
+        -:   88:
+    #####:   89:  if (yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_UNKNOWN &&
+    #####:   90:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_AM33 &&
+    #####:   91:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_AMD64 &&
+    #####:   92:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_ARM &&
+    #####:   93:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_ARMNT &&
+    #####:   94:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_ARM64 &&
+    #####:   95:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_EBC &&
+    #####:   96:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_I386 &&
+    #####:   97:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_IA64 &&
+    #####:   98:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_M32R &&
+    #####:   99:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_MIPS16 &&
+    #####:  100:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_MIPSFPU &&
+    #####:  101:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_MIPSFPU16 &&
+    #####:  102:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_POWERPC &&
+    #####:  103:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_POWERPCFP &&
+    #####:  104:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_R4000 &&
+    #####:  105:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_SH3 &&
+    #####:  106:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_SH3DSP &&
+    #####:  107:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_SH4 &&
+    #####:  108:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_SH5 &&
+    #####:  109:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_THUMB &&
+    #####:  110:      yr_le16toh(pe_header->FileHeader.Machine) != IMAGE_FILE_MACHINE_WCEMIPSV2)
+        -:  111:  {
+    #####:  112:    return NULL;
+        -:  113:  }
+        -:  114:
+    #####:  115:  return pe_header;
+        -:  116:}
+        -:  117:
+        -:  118:
+    #####:  119:PIMAGE_DATA_DIRECTORY pe_get_directory_entry(
+        -:  120:    PE* pe,
+        -:  121:    int entry)
+        -:  122:{
+        -:  123:  PIMAGE_DATA_DIRECTORY directory_start;
+        -:  124:  uint8_t* optional_header_start;
+        -:  125:  uint16_t optional_header_size;
+        -:  126:
+        -:  127:  // We are specifically NOT checking NumberOfRvaAndSizes here because it can
+        -:  128:  // lie. 7ff1bf680c80fd73c0b35084904848b3705480ddeb6d0eff62180bd14cd18570 has
+        -:  129:  // NumberOfRvaAndSizes set to 11 when in fact there is a valid
+        -:  130:  // IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR entry (which is more than 11). If we
+        -:  131:  // are overly strict here and only parse entries which are less than
+        -:  132:  // NumberOfRvaAndSizes we run the risk of missing otherwise perfectly valid
+        -:  133:  // files. Instead of being strict we check to make sure the entry is within
+        -:  134:  // the OptionalHeader, since SizeOfOptionalHeader includes the DataDirectory
+        -:  135:  // array.
+        -:  136:
+        -:  137:  // In case someone requests an entry which is, by definition, invalid.
+    #####:  138:  if (entry >= IMAGE_NUMBEROF_DIRECTORY_ENTRIES)
+    #####:  139:    return NULL;
+        -:  140:
+    #####:  141:  if (IS_64BITS_PE(pe))
+        -:  142:  {
+    #####:  143:    optional_header_start = (uint8_t*) &pe->header64->OptionalHeader;
+    #####:  144:    optional_header_size = pe->header64->FileHeader.SizeOfOptionalHeader;
+    #####:  145:    directory_start = pe->header64->OptionalHeader.DataDirectory;
+        -:  146:  }
+        -:  147:  else
+        -:  148:  {
+    #####:  149:    optional_header_start = (uint8_t*) &pe->header->OptionalHeader;
+    #####:  150:    optional_header_size = pe->header->FileHeader.SizeOfOptionalHeader;
+    #####:  151:    directory_start = pe->header->OptionalHeader.DataDirectory;
+        -:  152:  }
+        -:  153:
+        -:  154:  // Make sure the entry doesn't point outside of the OptionalHeader.
+    #####:  155:  if ((uint8_t*) (directory_start + entry) <= optional_header_start + optional_header_size)
+        -:  156:  {
+    #####:  157:    if (IS_64BITS_PE(pe))
+    #####:  158:      return &pe->header64->OptionalHeader.DataDirectory[entry];
+        -:  159:    else
+    #####:  160:      return &pe->header->OptionalHeader.DataDirectory[entry];
+        -:  161:  }
+        -:  162:
+    #####:  163:  return NULL;
+        -:  164:}
+        -:  165:
+        -:  166:
+    #####:  167:int64_t pe_rva_to_offset(
+        -:  168:    PE* pe,
+        -:  169:    uint64_t rva)
+        -:  170:{
+    #####:  171:  PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(pe->header);
+        -:  172:
+    #####:  173:  DWORD lowest_section_rva = 0xffffffff;
+    #####:  174:  DWORD section_rva = 0;
+    #####:  175:  DWORD section_offset = 0;
+    #####:  176:  DWORD section_raw_size = 0;
+        -:  177:
+        -:  178:  int64_t result;
+        -:  179:
+    #####:  180:  int i = 0;
+        -:  181:
+    #####:  182:  int alignment = 0;
+    #####:  183:  int rest = 0;
+        -:  184:
+    #####:  185:  while(i < yr_min(yr_le16toh(pe->header->FileHeader.NumberOfSections), MAX_PE_SECTIONS))
+        -:  186:  {
+    #####:  187:    if (struct_fits_in_pe(pe, section, IMAGE_SECTION_HEADER))
+        -:  188:    {
+    #####:  189:      if (lowest_section_rva > yr_le32toh(section->VirtualAddress))
+        -:  190:      {
+    #####:  191:        lowest_section_rva = yr_le32toh(section->VirtualAddress);
+        -:  192:      }
+        -:  193:
+    #####:  194:      if (rva >= yr_le32toh(section->VirtualAddress) &&
+    #####:  195:          section_rva <= yr_le32toh(section->VirtualAddress))
+        -:  196:      {
+        -:  197:        // Round section_offset
+        -:  198:        //
+        -:  199:        // Rounding everything less than 0x200 to 0 as discussed in
+        -:  200:        // https://code.google.com/archive/p/corkami/wikis/PE.wiki#PointerToRawData
+        -:  201:        // does not work for PE32_FILE from the test suite and for
+        -:  202:        // some tinype samples where File Alignment = 4
+        -:  203:        // (http://www.phreedom.org/research/tinype/).
+        -:  204:        //
+        -:  205:        // If FileAlignment is >= 0x200, it is apparently ignored (see
+        -:  206:        // Ero Carreras's pefile.py, PE.adjust_FileAlignment).
+        -:  207:
+    #####:  208:        alignment = yr_min(yr_le32toh(OptionalHeader(pe, FileAlignment)), 0x200);
+        -:  209:
+    #####:  210:        section_rva = yr_le32toh(section->VirtualAddress);
+    #####:  211:        section_offset = yr_le32toh(section->PointerToRawData);
+    #####:  212:        section_raw_size = yr_le32toh(section->SizeOfRawData);
+        -:  213:
+    #####:  214:        if (alignment)
+        -:  215:        {
+    #####:  216:          rest = section_offset % alignment;
+        -:  217:
+    #####:  218:          if (rest)
+    #####:  219:            section_offset -= rest;
+        -:  220:        }
+        -:  221:      }
+        -:  222:
+    #####:  223:      section++;
+    #####:  224:      i++;
+        -:  225:    }
+        -:  226:    else
+        -:  227:    {
+    #####:  228:      return -1;
+        -:  229:    }
+        -:  230:  }
+        -:  231:
+        -:  232:  // Everything before the first section seems to get mapped straight
+        -:  233:  // relative to ImageBase.
+        -:  234:
+    #####:  235:  if (rva < lowest_section_rva)
+        -:  236:  {
+    #####:  237:    section_rva = 0;
+    #####:  238:    section_offset = 0;
+    #####:  239:    section_raw_size = (DWORD) pe->data_size;
+        -:  240:  }
+        -:  241:
+        -:  242:  // Many sections, have a raw (on disk) size smaller than their in-memory size.
+        -:  243:  // Check for rva's that map to this sparse space, and therefore have no valid
+        -:  244:  // associated file offset.
+        -:  245:
+    #####:  246:  if ((rva - section_rva) >= section_raw_size)
+    #####:  247:    return -1;
+        -:  248:
+    #####:  249:  result = section_offset + (rva - section_rva);
+        -:  250:
+        -:  251:  // Check that the offset fits within the file.
+    #####:  252:  if (result >= pe->data_size)
+    #####:  253:    return -1;
+        -:  254:
+    #####:  255:  return result;
+        -:  256:}
+        -:  257:
+        -:  258:
+        -:  259:#if !HAVE_TIMEGM
+        -:  260:#if HAVE__MKGMTIME
+        -:  261:#define timegm _mkgmtime
+        -:  262:#else
+        -:  263:
+        -:  264:#include <time.h>
+        -:  265:
+        -:  266:static bool is_leap(
+        -:  267:    unsigned int year)
+        -:  268:{
+        -:  269:  year += 1900;
+        -:  270:  return (year % 4) == 0 && ((year % 100) != 0 || (year % 400) == 0);
+        -:  271:}
+        -:  272:
+        -:  273:
+        -:  274:time_t timegm(
+        -:  275:    struct tm *tm)
+        -:  276:{
+        -:  277:  static const unsigned ndays[2][12] = {
+        -:  278:      {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31},
+        -:  279:      {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}};
+        -:  280:
+        -:  281:  time_t res = 0;
+        -:  282:  int i;
+        -:  283:
+        -:  284:  for (i = 70; i < tm->tm_year; ++i)
+        -:  285:    res += is_leap(i) ? 366 : 365;
+        -:  286:
+        -:  287:  for (i = 0; i < tm->tm_mon; ++i)
+        -:  288:    res += ndays[is_leap(tm->tm_year)][i];
+        -:  289:
+        -:  290:  res += tm->tm_mday - 1;
+        -:  291:  res *= 24;
+        -:  292:  res += tm->tm_hour;
+        -:  293:  res *= 60;
+        -:  294:  res += tm->tm_min;
+        -:  295:  res *= 60;
+        -:  296:  res += tm->tm_sec;
+        -:  297:
+        -:  298:  return res;
+        -:  299:}
+        -:  300:
+        -:  301:#endif // HAVE__MKGMTIME
+        -:  302:#endif // !HAVE_TIMEGM
+        -:  303:
+        -:  304:#if HAVE_LIBCRYPTO
+        -:  305:
+        -:  306:// Taken from http://stackoverflow.com/questions/10975542/asn1-time-conversion
+        -:  307:// and cleaned up. Also uses timegm(3) instead of mktime(3).
+        -:  308:
+    #####:  309:time_t ASN1_get_time_t(
+        -:  310:  	ASN1_TIME* time)
+        -:  311:{
+        -:  312:  struct tm t;
+    #####:  313:  const char* str = (const char*) time->data;
+    #####:  314:  size_t i = 0;
+        -:  315:
+    #####:  316:  memset(&t, 0, sizeof(t));
+        -:  317:
+    #####:  318:  if (time->type == V_ASN1_UTCTIME) /* two digit year */
+        -:  319:  {
+    #####:  320:    t.tm_year = (str[i++] - '0') * 10;
+    #####:  321:    t.tm_year += (str[i++] - '0');
+        -:  322:
+    #####:  323:    if (t.tm_year < 70)
+    #####:  324:      t.tm_year += 100;
+        -:  325:  }
+    #####:  326:  else if (time->type == V_ASN1_GENERALIZEDTIME) /* four digit year */
+        -:  327:  {
+    #####:  328:    t.tm_year = (str[i++] - '0') * 1000;
+    #####:  329:    t.tm_year += (str[i++] - '0') * 100;
+    #####:  330:    t.tm_year += (str[i++] - '0') * 10;
+    #####:  331:    t.tm_year += (str[i++] - '0');
+    #####:  332:    t.tm_year -= 1900;
+        -:  333:  }
+        -:  334:
+    #####:  335:  t.tm_mon = (str[i++] - '0') * 10;
+    #####:  336:  t.tm_mon += (str[i++] - '0') - 1; // -1 since January is 0 not 1.
+    #####:  337:  t.tm_mday = (str[i++] - '0') * 10;
+    #####:  338:  t.tm_mday += (str[i++] - '0');
+    #####:  339:  t.tm_hour = (str[i++] - '0') * 10;
+    #####:  340:  t.tm_hour += (str[i++] - '0');
+    #####:  341:  t.tm_min = (str[i++] - '0') * 10;
+    #####:  342:  t.tm_min += (str[i++] - '0');
+    #####:  343:  t.tm_sec = (str[i++] - '0') * 10;
+    #####:  344:  t.tm_sec += (str[i++] - '0');
+        -:  345:
+        -:  346:  /* Note: we did not adjust the time based on time zone information */
+    #####:  347:  return timegm(&t);
+        -:  348:}
+        -:  349:
+        -:  350:#endif
+        -:  351:
+        -:  352:
+        -:  353:// These ordinals are taken from pefile. If a lookup fails attempt to return
+        -:  354:// "ordN" and if that fails, return NULL. The caller is responsible for freeing
+        -:  355:// the returned string.
+        -:  356:
+    #####:  357:char *ord_lookup(
+        -:  358:    char *dll,
+        -:  359:    uint16_t ord)
+        -:  360:{
+        -:  361:  char name[64];
+    #####:  362:  name[0] = '\0';
+        -:  363:
+    #####:  364:  if (strncasecmp(dll, "WS2_32.dll", 10) == 0 ||
+    #####:  365:      strncasecmp(dll, "wsock32.dll", 11) == 0)
+        -:  366:  {
+    #####:  367:    switch(ord) {
+    #####:  368:      case 1:
+    #####:  369:        sprintf(name, "accept");
+    #####:  370:        break;
+    #####:  371:      case 2:
+    #####:  372:        sprintf(name, "bind");
+    #####:  373:        break;
+    #####:  374:      case 3:
+    #####:  375:        sprintf(name, "closesocket");
+    #####:  376:        break;
+    #####:  377:      case 4:
+    #####:  378:        sprintf(name, "connect");
+    #####:  379:        break;
+    #####:  380:      case 5:
+    #####:  381:        sprintf(name, "getpeername");
+    #####:  382:        break;
+    #####:  383:      case 6:
+    #####:  384:        sprintf(name, "getsockname");
+    #####:  385:        break;
+    #####:  386:      case 7:
+    #####:  387:        sprintf(name, "getsockopt");
+    #####:  388:        break;
+    #####:  389:      case 8:
+    #####:  390:        sprintf(name, "htonl");
+    #####:  391:        break;
+    #####:  392:      case 9:
+    #####:  393:        sprintf(name, "htons");
+    #####:  394:        break;
+    #####:  395:      case 10:
+    #####:  396:        sprintf(name, "ioctlsocket");
+    #####:  397:        break;
+    #####:  398:      case 11:
+    #####:  399:        sprintf(name, "inet_addr");
+    #####:  400:        break;
+    #####:  401:      case 12:
+    #####:  402:        sprintf(name, "inet_ntoa");
+    #####:  403:        break;
+    #####:  404:      case 13:
+    #####:  405:        sprintf(name, "listen");
+    #####:  406:        break;
+    #####:  407:      case 14:
+    #####:  408:        sprintf(name, "ntohl");
+    #####:  409:        break;
+    #####:  410:      case 15:
+    #####:  411:        sprintf(name, "ntohs");
+    #####:  412:        break;
+    #####:  413:      case 16:
+    #####:  414:        sprintf(name, "recv");
+    #####:  415:        break;
+    #####:  416:      case 17:
+    #####:  417:        sprintf(name, "recvfrom");
+    #####:  418:        break;
+    #####:  419:      case 18:
+    #####:  420:        sprintf(name, "select");
+    #####:  421:        break;
+    #####:  422:      case 19:
+    #####:  423:        sprintf(name, "send");
+    #####:  424:        break;
+    #####:  425:      case 20:
+    #####:  426:        sprintf(name, "sendto");
+    #####:  427:        break;
+    #####:  428:      case 21:
+    #####:  429:        sprintf(name, "setsockopt");
+    #####:  430:        break;
+    #####:  431:      case 22:
+    #####:  432:        sprintf(name, "shutdown");
+    #####:  433:        break;
+    #####:  434:      case 23:
+    #####:  435:        sprintf(name, "socket");
+    #####:  436:        break;
+    #####:  437:      case 24:
+    #####:  438:        sprintf(name, "GetAddrInfoW");
+    #####:  439:        break;
+    #####:  440:      case 25:
+    #####:  441:        sprintf(name, "GetNameInfoW");
+    #####:  442:        break;
+    #####:  443:      case 26:
+    #####:  444:        sprintf(name, "WSApSetPostRoutine");
+    #####:  445:        break;
+    #####:  446:      case 27:
+    #####:  447:        sprintf(name, "FreeAddrInfoW");
+    #####:  448:        break;
+    #####:  449:      case 28:
+    #####:  450:        sprintf(name, "WPUCompleteOverlappedRequest");
+    #####:  451:        break;
+    #####:  452:      case 29:
+    #####:  453:        sprintf(name, "WSAAccept");
+    #####:  454:        break;
+    #####:  455:      case 30:
+    #####:  456:        sprintf(name, "WSAAddressToStringA");
+    #####:  457:        break;
+    #####:  458:      case 31:
+    #####:  459:        sprintf(name, "WSAAddressToStringW");
+    #####:  460:        break;
+    #####:  461:      case 32:
+    #####:  462:        sprintf(name, "WSACloseEvent");
+    #####:  463:        break;
+    #####:  464:      case 33:
+    #####:  465:        sprintf(name, "WSAConnect");
+    #####:  466:        break;
+    #####:  467:      case 34:
+    #####:  468:        sprintf(name, "WSACreateEvent");
+    #####:  469:        break;
+    #####:  470:      case 35:
+    #####:  471:        sprintf(name, "WSADuplicateSocketA");
+    #####:  472:        break;
+    #####:  473:      case 36:
+    #####:  474:        sprintf(name, "WSADuplicateSocketW");
+    #####:  475:        break;
+    #####:  476:      case 37:
+    #####:  477:        sprintf(name, "WSAEnumNameSpaceProvidersA");
+    #####:  478:        break;
+    #####:  479:      case 38:
+    #####:  480:        sprintf(name, "WSAEnumNameSpaceProvidersW");
+    #####:  481:        break;
+    #####:  482:      case 39:
+    #####:  483:        sprintf(name, "WSAEnumNetworkEvents");
+    #####:  484:        break;
+    #####:  485:      case 40:
+    #####:  486:        sprintf(name, "WSAEnumProtocolsA");
+    #####:  487:        break;
+    #####:  488:      case 41:
+    #####:  489:        sprintf(name, "WSAEnumProtocolsW");
+    #####:  490:        break;
+    #####:  491:      case 42:
+    #####:  492:        sprintf(name, "WSAEventSelect");
+    #####:  493:        break;
+    #####:  494:      case 43:
+    #####:  495:        sprintf(name, "WSAGetOverlappedResult");
+    #####:  496:        break;
+    #####:  497:      case 44:
+    #####:  498:        sprintf(name, "WSAGetQOSByName");
+    #####:  499:        break;
+    #####:  500:      case 45:
+    #####:  501:        sprintf(name, "WSAGetServiceClassInfoA");
+    #####:  502:        break;
+    #####:  503:      case 46:
+    #####:  504:        sprintf(name, "WSAGetServiceClassInfoW");
+    #####:  505:        break;
+    #####:  506:      case 47:
+    #####:  507:        sprintf(name, "WSAGetServiceClassNameByClassIdA");
+    #####:  508:        break;
+    #####:  509:      case 48:
+    #####:  510:        sprintf(name, "WSAGetServiceClassNameByClassIdW");
+    #####:  511:        break;
+    #####:  512:      case 49:
+    #####:  513:        sprintf(name, "WSAHtonl");
+    #####:  514:        break;
+    #####:  515:      case 50:
+    #####:  516:        sprintf(name, "WSAHtons");
+    #####:  517:        break;
+    #####:  518:      case 51:
+    #####:  519:        sprintf(name, "gethostbyaddr");
+    #####:  520:        break;
+    #####:  521:      case 52:
+    #####:  522:        sprintf(name, "gethostbyname");
+    #####:  523:        break;
+    #####:  524:      case 53:
+    #####:  525:        sprintf(name, "getprotobyname");
+    #####:  526:        break;
+    #####:  527:      case 54:
+    #####:  528:        sprintf(name, "getprotobynumber");
+    #####:  529:        break;
+    #####:  530:      case 55:
+    #####:  531:        sprintf(name, "getservbyname");
+    #####:  532:        break;
+    #####:  533:      case 56:
+    #####:  534:        sprintf(name, "getservbyport");
+    #####:  535:        break;
+    #####:  536:      case 57:
+    #####:  537:        sprintf(name, "gethostname");
+    #####:  538:        break;
+    #####:  539:      case 58:
+    #####:  540:        sprintf(name, "WSAInstallServiceClassA");
+    #####:  541:        break;
+    #####:  542:      case 59:
+    #####:  543:        sprintf(name, "WSAInstallServiceClassW");
+    #####:  544:        break;
+    #####:  545:      case 60:
+    #####:  546:        sprintf(name, "WSAIoctl");
+    #####:  547:        break;
+    #####:  548:      case 61:
+    #####:  549:        sprintf(name, "WSAJoinLeaf");
+    #####:  550:        break;
+    #####:  551:      case 62:
+    #####:  552:        sprintf(name, "WSALookupServiceBeginA");
+    #####:  553:        break;
+    #####:  554:      case 63:
+    #####:  555:        sprintf(name, "WSALookupServiceBeginW");
+    #####:  556:        break;
+    #####:  557:      case 64:
+    #####:  558:        sprintf(name, "WSALookupServiceEnd");
+    #####:  559:        break;
+    #####:  560:      case 65:
+    #####:  561:        sprintf(name, "WSALookupServiceNextA");
+    #####:  562:        break;
+    #####:  563:      case 66:
+    #####:  564:        sprintf(name, "WSALookupServiceNextW");
+    #####:  565:        break;
+    #####:  566:      case 67:
+    #####:  567:        sprintf(name, "WSANSPIoctl");
+    #####:  568:        break;
+    #####:  569:      case 68:
+    #####:  570:        sprintf(name, "WSANtohl");
+    #####:  571:        break;
+    #####:  572:      case 69:
+    #####:  573:        sprintf(name, "WSANtohs");
+    #####:  574:        break;
+    #####:  575:      case 70:
+    #####:  576:        sprintf(name, "WSAProviderConfigChange");
+    #####:  577:        break;
+    #####:  578:      case 71:
+    #####:  579:        sprintf(name, "WSARecv");
+    #####:  580:        break;
+    #####:  581:      case 72:
+    #####:  582:        sprintf(name, "WSARecvDisconnect");
+    #####:  583:        break;
+    #####:  584:      case 73:
+    #####:  585:        sprintf(name, "WSARecvFrom");
+    #####:  586:        break;
+    #####:  587:      case 74:
+    #####:  588:        sprintf(name, "WSARemoveServiceClass");
+    #####:  589:        break;
+    #####:  590:      case 75:
+    #####:  591:        sprintf(name, "WSAResetEvent");
+    #####:  592:        break;
+    #####:  593:      case 76:
+    #####:  594:        sprintf(name, "WSASend");
+    #####:  595:        break;
+    #####:  596:      case 77:
+    #####:  597:        sprintf(name, "WSASendDisconnect");
+    #####:  598:        break;
+    #####:  599:      case 78:
+    #####:  600:        sprintf(name, "WSASendTo");
+    #####:  601:        break;
+    #####:  602:      case 79:
+    #####:  603:        sprintf(name, "WSASetEvent");
+    #####:  604:        break;
+    #####:  605:      case 80:
+    #####:  606:        sprintf(name, "WSASetServiceA");
+    #####:  607:        break;
+    #####:  608:      case 81:
+    #####:  609:        sprintf(name, "WSASetServiceW");
+    #####:  610:        break;
+    #####:  611:      case 82:
+    #####:  612:        sprintf(name, "WSASocketA");
+    #####:  613:        break;
+    #####:  614:      case 83:
+    #####:  615:        sprintf(name, "WSASocketW");
+    #####:  616:        break;
+    #####:  617:      case 84:
+    #####:  618:        sprintf(name, "WSAStringToAddressA");
+    #####:  619:        break;
+    #####:  620:      case 85:
+    #####:  621:        sprintf(name, "WSAStringToAddressW");
+    #####:  622:        break;
+    #####:  623:      case 86:
+    #####:  624:        sprintf(name, "WSAWaitForMultipleEvents");
+    #####:  625:        break;
+    #####:  626:      case 87:
+    #####:  627:        sprintf(name, "WSCDeinstallProvider");
+    #####:  628:        break;
+    #####:  629:      case 88:
+    #####:  630:        sprintf(name, "WSCEnableNSProvider");
+    #####:  631:        break;
+    #####:  632:      case 89:
+    #####:  633:        sprintf(name, "WSCEnumProtocols");
+    #####:  634:        break;
+    #####:  635:      case 90:
+    #####:  636:        sprintf(name, "WSCGetProviderPath");
+    #####:  637:        break;
+    #####:  638:      case 91:
+    #####:  639:        sprintf(name, "WSCInstallNameSpace");
+    #####:  640:        break;
+    #####:  641:      case 92:
+    #####:  642:        sprintf(name, "WSCInstallProvider");
+    #####:  643:        break;
+    #####:  644:      case 93:
+    #####:  645:        sprintf(name, "WSCUnInstallNameSpace");
+    #####:  646:        break;
+    #####:  647:      case 94:
+    #####:  648:        sprintf(name, "WSCUpdateProvider");
+    #####:  649:        break;
+    #####:  650:      case 95:
+    #####:  651:        sprintf(name, "WSCWriteNameSpaceOrder");
+    #####:  652:        break;
+    #####:  653:      case 96:
+    #####:  654:        sprintf(name, "WSCWriteProviderOrder");
+    #####:  655:        break;
+    #####:  656:      case 97:
+    #####:  657:        sprintf(name, "freeaddrinfo");
+    #####:  658:        break;
+    #####:  659:      case 98:
+    #####:  660:        sprintf(name, "getaddrinfo");
+    #####:  661:        break;
+    #####:  662:      case 99:
+    #####:  663:        sprintf(name, "getnameinfo");
+    #####:  664:        break;
+    #####:  665:      case 101:
+    #####:  666:        sprintf(name, "WSAAsyncSelect");
+    #####:  667:        break;
+    #####:  668:      case 102:
+    #####:  669:        sprintf(name, "WSAAsyncGetHostByAddr");
+    #####:  670:        break;
+    #####:  671:      case 103:
+    #####:  672:        sprintf(name, "WSAAsyncGetHostByName");
+    #####:  673:        break;
+    #####:  674:      case 104:
+    #####:  675:        sprintf(name, "WSAAsyncGetProtoByNumber");
+    #####:  676:        break;
+    #####:  677:      case 105:
+    #####:  678:        sprintf(name, "WSAAsyncGetProtoByName");
+    #####:  679:        break;
+    #####:  680:      case 106:
+    #####:  681:        sprintf(name, "WSAAsyncGetServByPort");
+    #####:  682:        break;
+    #####:  683:      case 107:
+    #####:  684:        sprintf(name, "WSAAsyncGetServByName");
+    #####:  685:        break;
+    #####:  686:      case 108:
+    #####:  687:        sprintf(name, "WSACancelAsyncRequest");
+    #####:  688:        break;
+    #####:  689:      case 109:
+    #####:  690:        sprintf(name, "WSASetBlockingHook");
+    #####:  691:        break;
+    #####:  692:      case 110:
+    #####:  693:        sprintf(name, "WSAUnhookBlockingHook");
+    #####:  694:        break;
+    #####:  695:      case 111:
+    #####:  696:        sprintf(name, "WSAGetLastError");
+    #####:  697:        break;
+    #####:  698:      case 112:
+    #####:  699:        sprintf(name, "WSASetLastError");
+    #####:  700:        break;
+    #####:  701:      case 113:
+    #####:  702:        sprintf(name, "WSACancelBlockingCall");
+    #####:  703:        break;
+    #####:  704:      case 114:
+    #####:  705:        sprintf(name, "WSAIsBlocking");
+    #####:  706:        break;
+    #####:  707:      case 115:
+    #####:  708:        sprintf(name, "WSAStartup");
+    #####:  709:        break;
+    #####:  710:      case 116:
+    #####:  711:        sprintf(name, "WSACleanup");
+    #####:  712:        break;
+    #####:  713:      case 151:
+    #####:  714:        sprintf(name, "__WSAFDIsSet");
+    #####:  715:        break;
+    #####:  716:      case 500:
+    #####:  717:        sprintf(name, "WEP");
+    #####:  718:        break;
+    #####:  719:      default:
+    #####:  720:        break;
+        -:  721:    }
+    #####:  722:  }
+    #####:  723:  else if (strncasecmp(dll, "oleaut32.dll", 12) == 0)
+        -:  724:  {
+    #####:  725:    switch (ord) {
+    #####:  726:      case 2:
+    #####:  727:        sprintf(name, "SysAllocString");
+    #####:  728:        break;
+    #####:  729:      case 3:
+    #####:  730:        sprintf(name, "SysReAllocString");
+    #####:  731:        break;
+    #####:  732:      case 4:
+    #####:  733:        sprintf(name, "SysAllocStringLen");
+    #####:  734:        break;
+    #####:  735:      case 5:
+    #####:  736:        sprintf(name, "SysReAllocStringLen");
+    #####:  737:        break;
+    #####:  738:      case 6:
+    #####:  739:        sprintf(name, "SysFreeString");
+    #####:  740:        break;
+    #####:  741:      case 7:
+    #####:  742:        sprintf(name, "SysStringLen");
+    #####:  743:        break;
+    #####:  744:      case 8:
+    #####:  745:        sprintf(name, "VariantInit");
+    #####:  746:        break;
+    #####:  747:      case 9:
+    #####:  748:        sprintf(name, "VariantClear");
+    #####:  749:        break;
+    #####:  750:      case 10:
+    #####:  751:        sprintf(name, "VariantCopy");
+    #####:  752:        break;
+    #####:  753:      case 11:
+    #####:  754:        sprintf(name, "VariantCopyInd");
+    #####:  755:        break;
+    #####:  756:      case 12:
+    #####:  757:        sprintf(name, "VariantChangeType");
+    #####:  758:        break;
+    #####:  759:      case 13:
+    #####:  760:        sprintf(name, "VariantTimeToDosDateTime");
+    #####:  761:        break;
+    #####:  762:      case 14:
+    #####:  763:        sprintf(name, "DosDateTimeToVariantTime");
+    #####:  764:        break;
+    #####:  765:      case 15:
+    #####:  766:        sprintf(name, "SafeArrayCreate");
+    #####:  767:        break;
+    #####:  768:      case 16:
+    #####:  769:        sprintf(name, "SafeArrayDestroy");
+    #####:  770:        break;
+    #####:  771:      case 17:
+    #####:  772:        sprintf(name, "SafeArrayGetDim");
+    #####:  773:        break;
+    #####:  774:      case 18:
+    #####:  775:        sprintf(name, "SafeArrayGetElemsize");
+    #####:  776:        break;
+    #####:  777:      case 19:
+    #####:  778:        sprintf(name, "SafeArrayGetUBound");
+    #####:  779:        break;
+    #####:  780:      case 20:
+    #####:  781:        sprintf(name, "SafeArrayGetLBound");
+    #####:  782:        break;
+    #####:  783:      case 21:
+    #####:  784:        sprintf(name, "SafeArrayLock");
+    #####:  785:        break;
+    #####:  786:      case 22:
+    #####:  787:        sprintf(name, "SafeArrayUnlock");
+    #####:  788:        break;
+    #####:  789:      case 23:
+    #####:  790:        sprintf(name, "SafeArrayAccessData");
+    #####:  791:        break;
+    #####:  792:      case 24:
+    #####:  793:        sprintf(name, "SafeArrayUnaccessData");
+    #####:  794:        break;
+    #####:  795:      case 25:
+    #####:  796:        sprintf(name, "SafeArrayGetElement");
+    #####:  797:        break;
+    #####:  798:      case 26:
+    #####:  799:        sprintf(name, "SafeArrayPutElement");
+    #####:  800:        break;
+    #####:  801:      case 27:
+    #####:  802:        sprintf(name, "SafeArrayCopy");
+    #####:  803:        break;
+    #####:  804:      case 28:
+    #####:  805:        sprintf(name, "DispGetParam");
+    #####:  806:        break;
+    #####:  807:      case 29:
+    #####:  808:        sprintf(name, "DispGetIDsOfNames");
+    #####:  809:        break;
+    #####:  810:      case 30:
+    #####:  811:        sprintf(name, "DispInvoke");
+    #####:  812:        break;
+    #####:  813:      case 31:
+    #####:  814:        sprintf(name, "CreateDispTypeInfo");
+    #####:  815:        break;
+    #####:  816:      case 32:
+    #####:  817:        sprintf(name, "CreateStdDispatch");
+    #####:  818:        break;
+    #####:  819:      case 33:
+    #####:  820:        sprintf(name, "RegisterActiveObject");
+    #####:  821:        break;
+    #####:  822:      case 34:
+    #####:  823:        sprintf(name, "RevokeActiveObject");
+    #####:  824:        break;
+    #####:  825:      case 35:
+    #####:  826:        sprintf(name, "GetActiveObject");
+    #####:  827:        break;
+    #####:  828:      case 36:
+    #####:  829:        sprintf(name, "SafeArrayAllocDescriptor");
+    #####:  830:        break;
+    #####:  831:      case 37:
+    #####:  832:        sprintf(name, "SafeArrayAllocData");
+    #####:  833:        break;
+    #####:  834:      case 38:
+    #####:  835:        sprintf(name, "SafeArrayDestroyDescriptor");
+    #####:  836:        break;
+    #####:  837:      case 39:
+    #####:  838:        sprintf(name, "SafeArrayDestroyData");
+    #####:  839:        break;
+    #####:  840:      case 40:
+    #####:  841:        sprintf(name, "SafeArrayRedim");
+    #####:  842:        break;
+    #####:  843:      case 41:
+    #####:  844:        sprintf(name, "SafeArrayAllocDescriptorEx");
+    #####:  845:        break;
+    #####:  846:      case 42:
+    #####:  847:        sprintf(name, "SafeArrayCreateEx");
+    #####:  848:        break;
+    #####:  849:      case 43:
+    #####:  850:        sprintf(name, "SafeArrayCreateVectorEx");
+    #####:  851:        break;
+    #####:  852:      case 44:
+    #####:  853:        sprintf(name, "SafeArraySetRecordInfo");
+    #####:  854:        break;
+    #####:  855:      case 45:
+    #####:  856:        sprintf(name, "SafeArrayGetRecordInfo");
+    #####:  857:        break;
+    #####:  858:      case 46:
+    #####:  859:        sprintf(name, "VarParseNumFromStr");
+    #####:  860:        break;
+    #####:  861:      case 47:
+    #####:  862:        sprintf(name, "VarNumFromParseNum");
+    #####:  863:        break;
+    #####:  864:      case 48:
+    #####:  865:        sprintf(name, "VarI2FromUI1");
+    #####:  866:        break;
+    #####:  867:      case 49:
+    #####:  868:        sprintf(name, "VarI2FromI4");
+    #####:  869:        break;
+    #####:  870:      case 50:
+    #####:  871:        sprintf(name, "VarI2FromR4");
+    #####:  872:        break;
+    #####:  873:      case 51:
+    #####:  874:        sprintf(name, "VarI2FromR8");
+    #####:  875:        break;
+    #####:  876:      case 52:
+    #####:  877:        sprintf(name, "VarI2FromCy");
+    #####:  878:        break;
+    #####:  879:      case 53:
+    #####:  880:        sprintf(name, "VarI2FromDate");
+    #####:  881:        break;
+    #####:  882:      case 54:
+    #####:  883:        sprintf(name, "VarI2FromStr");
+    #####:  884:        break;
+    #####:  885:      case 55:
+    #####:  886:        sprintf(name, "VarI2FromDisp");
+    #####:  887:        break;
+    #####:  888:      case 56:
+    #####:  889:        sprintf(name, "VarI2FromBool");
+    #####:  890:        break;
+    #####:  891:      case 57:
+    #####:  892:        sprintf(name, "SafeArraySetIID");
+    #####:  893:        break;
+    #####:  894:      case 58:
+    #####:  895:        sprintf(name, "VarI4FromUI1");
+    #####:  896:        break;
+    #####:  897:      case 59:
+    #####:  898:        sprintf(name, "VarI4FromI2");
+    #####:  899:        break;
+    #####:  900:      case 60:
+    #####:  901:        sprintf(name, "VarI4FromR4");
+    #####:  902:        break;
+    #####:  903:      case 61:
+    #####:  904:        sprintf(name, "VarI4FromR8");
+    #####:  905:        break;
+    #####:  906:      case 62:
+    #####:  907:        sprintf(name, "VarI4FromCy");
+    #####:  908:        break;
+    #####:  909:      case 63:
+    #####:  910:        sprintf(name, "VarI4FromDate");
+    #####:  911:        break;
+    #####:  912:      case 64:
+    #####:  913:        sprintf(name, "VarI4FromStr");
+    #####:  914:        break;
+    #####:  915:      case 65:
+    #####:  916:        sprintf(name, "VarI4FromDisp");
+    #####:  917:        break;
+    #####:  918:      case 66:
+    #####:  919:        sprintf(name, "VarI4FromBool");
+    #####:  920:        break;
+    #####:  921:      case 67:
+    #####:  922:        sprintf(name, "SafeArrayGetIID");
+    #####:  923:        break;
+    #####:  924:      case 68:
+    #####:  925:        sprintf(name, "VarR4FromUI1");
+    #####:  926:        break;
+    #####:  927:      case 69:
+    #####:  928:        sprintf(name, "VarR4FromI2");
+    #####:  929:        break;
+    #####:  930:      case 70:
+    #####:  931:        sprintf(name, "VarR4FromI4");
+    #####:  932:        break;
+    #####:  933:      case 71:
+    #####:  934:        sprintf(name, "VarR4FromR8");
+    #####:  935:        break;
+    #####:  936:      case 72:
+    #####:  937:        sprintf(name, "VarR4FromCy");
+    #####:  938:        break;
+    #####:  939:      case 73:
+    #####:  940:        sprintf(name, "VarR4FromDate");
+    #####:  941:        break;
+    #####:  942:      case 74:
+    #####:  943:        sprintf(name, "VarR4FromStr");
+    #####:  944:        break;
+    #####:  945:      case 75:
+    #####:  946:        sprintf(name, "VarR4FromDisp");
+    #####:  947:        break;
+    #####:  948:      case 76:
+    #####:  949:        sprintf(name, "VarR4FromBool");
+    #####:  950:        break;
+    #####:  951:      case 77:
+    #####:  952:        sprintf(name, "SafeArrayGetVartype");
+    #####:  953:        break;
+    #####:  954:      case 78:
+    #####:  955:        sprintf(name, "VarR8FromUI1");
+    #####:  956:        break;
+    #####:  957:      case 79:
+    #####:  958:        sprintf(name, "VarR8FromI2");
+    #####:  959:        break;
+    #####:  960:      case 80:
+    #####:  961:        sprintf(name, "VarR8FromI4");
+    #####:  962:        break;
+    #####:  963:      case 81:
+    #####:  964:        sprintf(name, "VarR8FromR4");
+    #####:  965:        break;
+    #####:  966:      case 82:
+    #####:  967:        sprintf(name, "VarR8FromCy");
+    #####:  968:        break;
+    #####:  969:      case 83:
+    #####:  970:        sprintf(name, "VarR8FromDate");
+    #####:  971:        break;
+    #####:  972:      case 84:
+    #####:  973:        sprintf(name, "VarR8FromStr");
+    #####:  974:        break;
+    #####:  975:      case 85:
+    #####:  976:        sprintf(name, "VarR8FromDisp");
+    #####:  977:        break;
+    #####:  978:      case 86:
+    #####:  979:        sprintf(name, "VarR8FromBool");
+    #####:  980:        break;
+    #####:  981:      case 87:
+    #####:  982:        sprintf(name, "VarFormat");
+    #####:  983:        break;
+    #####:  984:      case 88:
+    #####:  985:        sprintf(name, "VarDateFromUI1");
+    #####:  986:        break;
+    #####:  987:      case 89:
+    #####:  988:        sprintf(name, "VarDateFromI2");
+    #####:  989:        break;
+    #####:  990:      case 90:
+    #####:  991:        sprintf(name, "VarDateFromI4");
+    #####:  992:        break;
+    #####:  993:      case 91:
+    #####:  994:        sprintf(name, "VarDateFromR4");
+    #####:  995:        break;
+    #####:  996:      case 92:
+    #####:  997:        sprintf(name, "VarDateFromR8");
+    #####:  998:        break;
+    #####:  999:      case 93:
+    #####: 1000:        sprintf(name, "VarDateFromCy");
+    #####: 1001:        break;
+    #####: 1002:      case 94:
+    #####: 1003:        sprintf(name, "VarDateFromStr");
+    #####: 1004:        break;
+    #####: 1005:      case 95:
+    #####: 1006:        sprintf(name, "VarDateFromDisp");
+    #####: 1007:        break;
+    #####: 1008:      case 96:
+    #####: 1009:        sprintf(name, "VarDateFromBool");
+    #####: 1010:        break;
+    #####: 1011:      case 97:
+    #####: 1012:        sprintf(name, "VarFormatDateTime");
+    #####: 1013:        break;
+    #####: 1014:      case 98:
+    #####: 1015:        sprintf(name, "VarCyFromUI1");
+    #####: 1016:        break;
+    #####: 1017:      case 99:
+    #####: 1018:        sprintf(name, "VarCyFromI2");
+    #####: 1019:        break;
+    #####: 1020:      case 100:
+    #####: 1021:        sprintf(name, "VarCyFromI4");
+    #####: 1022:        break;
+    #####: 1023:      case 101:
+    #####: 1024:        sprintf(name, "VarCyFromR4");
+    #####: 1025:        break;
+    #####: 1026:      case 102:
+    #####: 1027:        sprintf(name, "VarCyFromR8");
+    #####: 1028:        break;
+    #####: 1029:      case 103:
+    #####: 1030:        sprintf(name, "VarCyFromDate");
+    #####: 1031:        break;
+    #####: 1032:      case 104:
+    #####: 1033:        sprintf(name, "VarCyFromStr");
+    #####: 1034:        break;
+    #####: 1035:      case 105:
+    #####: 1036:        sprintf(name, "VarCyFromDisp");
+    #####: 1037:        break;
+    #####: 1038:      case 106:
+    #####: 1039:        sprintf(name, "VarCyFromBool");
+    #####: 1040:        break;
+    #####: 1041:      case 107:
+    #####: 1042:        sprintf(name, "VarFormatNumber");
+    #####: 1043:        break;
+    #####: 1044:      case 108:
+    #####: 1045:        sprintf(name, "VarBstrFromUI1");
+    #####: 1046:        break;
+    #####: 1047:      case 109:
+    #####: 1048:        sprintf(name, "VarBstrFromI2");
+    #####: 1049:        break;
+    #####: 1050:      case 110:
+    #####: 1051:        sprintf(name, "VarBstrFromI4");
+    #####: 1052:        break;
+    #####: 1053:      case 111:
+    #####: 1054:        sprintf(name, "VarBstrFromR4");
+    #####: 1055:        break;
+    #####: 1056:      case 112:
+    #####: 1057:        sprintf(name, "VarBstrFromR8");
+    #####: 1058:        break;
+    #####: 1059:      case 113:
+    #####: 1060:        sprintf(name, "VarBstrFromCy");
+    #####: 1061:        break;
+    #####: 1062:      case 114:
+    #####: 1063:        sprintf(name, "VarBstrFromDate");
+    #####: 1064:        break;
+    #####: 1065:      case 115:
+    #####: 1066:        sprintf(name, "VarBstrFromDisp");
+    #####: 1067:        break;
+    #####: 1068:      case 116:
+    #####: 1069:        sprintf(name, "VarBstrFromBool");
+    #####: 1070:        break;
+    #####: 1071:      case 117:
+    #####: 1072:        sprintf(name, "VarFormatPercent");
+    #####: 1073:        break;
+    #####: 1074:      case 118:
+    #####: 1075:        sprintf(name, "VarBoolFromUI1");
+    #####: 1076:        break;
+    #####: 1077:      case 119:
+    #####: 1078:        sprintf(name, "VarBoolFromI2");
+    #####: 1079:        break;
+    #####: 1080:      case 120:
+    #####: 1081:        sprintf(name, "VarBoolFromI4");
+    #####: 1082:        break;
+    #####: 1083:      case 121:
+    #####: 1084:        sprintf(name, "VarBoolFromR4");
+    #####: 1085:        break;
+    #####: 1086:      case 122:
+    #####: 1087:        sprintf(name, "VarBoolFromR8");
+    #####: 1088:        break;
+    #####: 1089:      case 123:
+    #####: 1090:        sprintf(name, "VarBoolFromDate");
+    #####: 1091:        break;
+    #####: 1092:      case 124:
+    #####: 1093:        sprintf(name, "VarBoolFromCy");
+    #####: 1094:        break;
+    #####: 1095:      case 125:
+    #####: 1096:        sprintf(name, "VarBoolFromStr");
+    #####: 1097:        break;
+    #####: 1098:      case 126:
+    #####: 1099:        sprintf(name, "VarBoolFromDisp");
+    #####: 1100:        break;
+    #####: 1101:      case 127:
+    #####: 1102:        sprintf(name, "VarFormatCurrency");
+    #####: 1103:        break;
+    #####: 1104:      case 128:
+    #####: 1105:        sprintf(name, "VarWeekdayName");
+    #####: 1106:        break;
+    #####: 1107:      case 129:
+    #####: 1108:        sprintf(name, "VarMonthName");
+    #####: 1109:        break;
+    #####: 1110:      case 130:
+    #####: 1111:        sprintf(name, "VarUI1FromI2");
+    #####: 1112:        break;
+    #####: 1113:      case 131:
+    #####: 1114:        sprintf(name, "VarUI1FromI4");
+    #####: 1115:        break;
+    #####: 1116:      case 132:
+    #####: 1117:        sprintf(name, "VarUI1FromR4");
+    #####: 1118:        break;
+    #####: 1119:      case 133:
+    #####: 1120:        sprintf(name, "VarUI1FromR8");
+    #####: 1121:        break;
+    #####: 1122:      case 134:
+    #####: 1123:        sprintf(name, "VarUI1FromCy");
+    #####: 1124:        break;
+    #####: 1125:      case 135:
+    #####: 1126:        sprintf(name, "VarUI1FromDate");
+    #####: 1127:        break;
+    #####: 1128:      case 136:
+    #####: 1129:        sprintf(name, "VarUI1FromStr");
+    #####: 1130:        break;
+    #####: 1131:      case 137:
+    #####: 1132:        sprintf(name, "VarUI1FromDisp");
+    #####: 1133:        break;
+    #####: 1134:      case 138:
+    #####: 1135:        sprintf(name, "VarUI1FromBool");
+    #####: 1136:        break;
+    #####: 1137:      case 139:
+    #####: 1138:        sprintf(name, "VarFormatFromTokens");
+    #####: 1139:        break;
+    #####: 1140:      case 140:
+    #####: 1141:        sprintf(name, "VarTokenizeFormatString");
+    #####: 1142:        break;
+    #####: 1143:      case 141:
+    #####: 1144:        sprintf(name, "VarAdd");
+    #####: 1145:        break;
+    #####: 1146:      case 142:
+    #####: 1147:        sprintf(name, "VarAnd");
+    #####: 1148:        break;
+    #####: 1149:      case 143:
+    #####: 1150:        sprintf(name, "VarDiv");
+    #####: 1151:        break;
+    #####: 1152:      case 144:
+    #####: 1153:        sprintf(name, "DllCanUnloadNow");
+    #####: 1154:        break;
+    #####: 1155:      case 145:
+    #####: 1156:        sprintf(name, "DllGetClassObject");
+    #####: 1157:        break;
+    #####: 1158:      case 146:
+    #####: 1159:        sprintf(name, "DispCallFunc");
+    #####: 1160:        break;
+    #####: 1161:      case 147:
+    #####: 1162:        sprintf(name, "VariantChangeTypeEx");
+    #####: 1163:        break;
+    #####: 1164:      case 148:
+    #####: 1165:        sprintf(name, "SafeArrayPtrOfIndex");
+    #####: 1166:        break;
+    #####: 1167:      case 149:
+    #####: 1168:        sprintf(name, "SysStringByteLen");
+    #####: 1169:        break;
+    #####: 1170:      case 150:
+    #####: 1171:        sprintf(name, "SysAllocStringByteLen");
+    #####: 1172:        break;
+    #####: 1173:      case 151:
+    #####: 1174:        sprintf(name, "DllRegisterServer");
+    #####: 1175:        break;
+    #####: 1176:      case 152:
+    #####: 1177:        sprintf(name, "VarEqv");
+    #####: 1178:        break;
+    #####: 1179:      case 153:
+    #####: 1180:        sprintf(name, "VarIdiv");
+    #####: 1181:        break;
+    #####: 1182:      case 154:
+    #####: 1183:        sprintf(name, "VarImp");
+    #####: 1184:        break;
+    #####: 1185:      case 155:
+    #####: 1186:        sprintf(name, "VarMod");
+    #####: 1187:        break;
+    #####: 1188:      case 156:
+    #####: 1189:        sprintf(name, "VarMul");
+    #####: 1190:        break;
+    #####: 1191:      case 157:
+    #####: 1192:        sprintf(name, "VarOr");
+    #####: 1193:        break;
+    #####: 1194:      case 158:
+    #####: 1195:        sprintf(name, "VarPow");
+    #####: 1196:        break;
+    #####: 1197:      case 159:
+    #####: 1198:        sprintf(name, "VarSub");
+    #####: 1199:        break;
+    #####: 1200:      case 160:
+    #####: 1201:        sprintf(name, "CreateTypeLib");
+    #####: 1202:        break;
+    #####: 1203:      case 161:
+    #####: 1204:        sprintf(name, "LoadTypeLib");
+    #####: 1205:        break;
+    #####: 1206:      case 162:
+    #####: 1207:        sprintf(name, "LoadRegTypeLib");
+    #####: 1208:        break;
+    #####: 1209:      case 163:
+    #####: 1210:        sprintf(name, "RegisterTypeLib");
+    #####: 1211:        break;
+    #####: 1212:      case 164:
+    #####: 1213:        sprintf(name, "QueryPathOfRegTypeLib");
+    #####: 1214:        break;
+    #####: 1215:      case 165:
+    #####: 1216:        sprintf(name, "LHashValOfNameSys");
+    #####: 1217:        break;
+    #####: 1218:      case 166:
+    #####: 1219:        sprintf(name, "LHashValOfNameSysA");
+    #####: 1220:        break;
+    #####: 1221:      case 167:
+    #####: 1222:        sprintf(name, "VarXor");
+    #####: 1223:        break;
+    #####: 1224:      case 168:
+    #####: 1225:        sprintf(name, "VarAbs");
+    #####: 1226:        break;
+    #####: 1227:      case 169:
+    #####: 1228:        sprintf(name, "VarFix");
+    #####: 1229:        break;
+    #####: 1230:      case 170:
+    #####: 1231:        sprintf(name, "OaBuildVersion");
+    #####: 1232:        break;
+    #####: 1233:      case 171:
+    #####: 1234:        sprintf(name, "ClearCustData");
+    #####: 1235:        break;
+    #####: 1236:      case 172:
+    #####: 1237:        sprintf(name, "VarInt");
+    #####: 1238:        break;
+    #####: 1239:      case 173:
+    #####: 1240:        sprintf(name, "VarNeg");
+    #####: 1241:        break;
+    #####: 1242:      case 174:
+    #####: 1243:        sprintf(name, "VarNot");
+    #####: 1244:        break;
+    #####: 1245:      case 175:
+    #####: 1246:        sprintf(name, "VarRound");
+    #####: 1247:        break;
+    #####: 1248:      case 176:
+    #####: 1249:        sprintf(name, "VarCmp");
+    #####: 1250:        break;
+    #####: 1251:      case 177:
+    #####: 1252:        sprintf(name, "VarDecAdd");
+    #####: 1253:        break;
+    #####: 1254:      case 178:
+    #####: 1255:        sprintf(name, "VarDecDiv");
+    #####: 1256:        break;
+    #####: 1257:      case 179:
+    #####: 1258:        sprintf(name, "VarDecMul");
+    #####: 1259:        break;
+    #####: 1260:      case 180:
+    #####: 1261:        sprintf(name, "CreateTypeLib2");
+    #####: 1262:        break;
+    #####: 1263:      case 181:
+    #####: 1264:        sprintf(name, "VarDecSub");
+    #####: 1265:        break;
+    #####: 1266:      case 182:
+    #####: 1267:        sprintf(name, "VarDecAbs");
+    #####: 1268:        break;
+    #####: 1269:      case 183:
+    #####: 1270:        sprintf(name, "LoadTypeLibEx");
+    #####: 1271:        break;
+    #####: 1272:      case 184:
+    #####: 1273:        sprintf(name, "SystemTimeToVariantTime");
+    #####: 1274:        break;
+    #####: 1275:      case 185:
+    #####: 1276:        sprintf(name, "VariantTimeToSystemTime");
+    #####: 1277:        break;
+    #####: 1278:      case 186:
+    #####: 1279:        sprintf(name, "UnRegisterTypeLib");
+    #####: 1280:        break;
+    #####: 1281:      case 187:
+    #####: 1282:        sprintf(name, "VarDecFix");
+    #####: 1283:        break;
+    #####: 1284:      case 188:
+    #####: 1285:        sprintf(name, "VarDecInt");
+    #####: 1286:        break;
+    #####: 1287:      case 189:
+    #####: 1288:        sprintf(name, "VarDecNeg");
+    #####: 1289:        break;
+    #####: 1290:      case 190:
+    #####: 1291:        sprintf(name, "VarDecFromUI1");
+    #####: 1292:        break;
+    #####: 1293:      case 191:
+    #####: 1294:        sprintf(name, "VarDecFromI2");
+    #####: 1295:        break;
+    #####: 1296:      case 192:
+    #####: 1297:        sprintf(name, "VarDecFromI4");
+    #####: 1298:        break;
+    #####: 1299:      case 193:
+    #####: 1300:        sprintf(name, "VarDecFromR4");
+    #####: 1301:        break;
+    #####: 1302:      case 194:
+    #####: 1303:        sprintf(name, "VarDecFromR8");
+    #####: 1304:        break;
+    #####: 1305:      case 195:
+    #####: 1306:        sprintf(name, "VarDecFromDate");
+    #####: 1307:        break;
+    #####: 1308:      case 196:
+    #####: 1309:        sprintf(name, "VarDecFromCy");
+    #####: 1310:        break;
+    #####: 1311:      case 197:
+    #####: 1312:        sprintf(name, "VarDecFromStr");
+    #####: 1313:        break;
+    #####: 1314:      case 198:
+    #####: 1315:        sprintf(name, "VarDecFromDisp");
+    #####: 1316:        break;
+    #####: 1317:      case 199:
+    #####: 1318:        sprintf(name, "VarDecFromBool");
+    #####: 1319:        break;
+    #####: 1320:      case 200:
+    #####: 1321:        sprintf(name, "GetErrorInfo");
+    #####: 1322:        break;
+    #####: 1323:      case 201:
+    #####: 1324:        sprintf(name, "SetErrorInfo");
+    #####: 1325:        break;
+    #####: 1326:      case 202:
+    #####: 1327:        sprintf(name, "CreateErrorInfo");
+    #####: 1328:        break;
+    #####: 1329:      case 203:
+    #####: 1330:        sprintf(name, "VarDecRound");
+    #####: 1331:        break;
+    #####: 1332:      case 204:
+    #####: 1333:        sprintf(name, "VarDecCmp");
+    #####: 1334:        break;
+    #####: 1335:      case 205:
+    #####: 1336:        sprintf(name, "VarI2FromI1");
+    #####: 1337:        break;
+    #####: 1338:      case 206:
+    #####: 1339:        sprintf(name, "VarI2FromUI2");
+    #####: 1340:        break;
+    #####: 1341:      case 207:
+    #####: 1342:        sprintf(name, "VarI2FromUI4");
+    #####: 1343:        break;
+    #####: 1344:      case 208:
+    #####: 1345:        sprintf(name, "VarI2FromDec");
+    #####: 1346:        break;
+    #####: 1347:      case 209:
+    #####: 1348:        sprintf(name, "VarI4FromI1");
+    #####: 1349:        break;
+    #####: 1350:      case 210:
+    #####: 1351:        sprintf(name, "VarI4FromUI2");
+    #####: 1352:        break;
+    #####: 1353:      case 211:
+    #####: 1354:        sprintf(name, "VarI4FromUI4");
+    #####: 1355:        break;
+    #####: 1356:      case 212:
+    #####: 1357:        sprintf(name, "VarI4FromDec");
+    #####: 1358:        break;
+    #####: 1359:      case 213:
+    #####: 1360:        sprintf(name, "VarR4FromI1");
+    #####: 1361:        break;
+    #####: 1362:      case 214:
+    #####: 1363:        sprintf(name, "VarR4FromUI2");
+    #####: 1364:        break;
+    #####: 1365:      case 215:
+    #####: 1366:        sprintf(name, "VarR4FromUI4");
+    #####: 1367:        break;
+    #####: 1368:      case 216:
+    #####: 1369:        sprintf(name, "VarR4FromDec");
+    #####: 1370:        break;
+    #####: 1371:      case 217:
+    #####: 1372:        sprintf(name, "VarR8FromI1");
+    #####: 1373:        break;
+    #####: 1374:      case 218:
+    #####: 1375:        sprintf(name, "VarR8FromUI2");
+    #####: 1376:        break;
+    #####: 1377:      case 219:
+    #####: 1378:        sprintf(name, "VarR8FromUI4");
+    #####: 1379:        break;
+    #####: 1380:      case 220:
+    #####: 1381:        sprintf(name, "VarR8FromDec");
+    #####: 1382:        break;
+    #####: 1383:      case 221:
+    #####: 1384:        sprintf(name, "VarDateFromI1");
+    #####: 1385:        break;
+    #####: 1386:      case 222:
+    #####: 1387:        sprintf(name, "VarDateFromUI2");
+    #####: 1388:        break;
+    #####: 1389:      case 223:
+    #####: 1390:        sprintf(name, "VarDateFromUI4");
+    #####: 1391:        break;
+    #####: 1392:      case 224:
+    #####: 1393:        sprintf(name, "VarDateFromDec");
+    #####: 1394:        break;
+    #####: 1395:      case 225:
+    #####: 1396:        sprintf(name, "VarCyFromI1");
+    #####: 1397:        break;
+    #####: 1398:      case 226:
+    #####: 1399:        sprintf(name, "VarCyFromUI2");
+    #####: 1400:        break;
+    #####: 1401:      case 227:
+    #####: 1402:        sprintf(name, "VarCyFromUI4");
+    #####: 1403:        break;
+    #####: 1404:      case 228:
+    #####: 1405:        sprintf(name, "VarCyFromDec");
+    #####: 1406:        break;
+    #####: 1407:      case 229:
+    #####: 1408:        sprintf(name, "VarBstrFromI1");
+    #####: 1409:        break;
+    #####: 1410:      case 230:
+    #####: 1411:        sprintf(name, "VarBstrFromUI2");
+    #####: 1412:        break;
+    #####: 1413:      case 231:
+    #####: 1414:        sprintf(name, "VarBstrFromUI4");
+    #####: 1415:        break;
+    #####: 1416:      case 232:
+    #####: 1417:        sprintf(name, "VarBstrFromDec");
+    #####: 1418:        break;
+    #####: 1419:      case 233:
+    #####: 1420:        sprintf(name, "VarBoolFromI1");
+    #####: 1421:        break;
+    #####: 1422:      case 234:
+    #####: 1423:        sprintf(name, "VarBoolFromUI2");
+    #####: 1424:        break;
+    #####: 1425:      case 235:
+    #####: 1426:        sprintf(name, "VarBoolFromUI4");
+    #####: 1427:        break;
+    #####: 1428:      case 236:
+    #####: 1429:        sprintf(name, "VarBoolFromDec");
+    #####: 1430:        break;
+    #####: 1431:      case 237:
+    #####: 1432:        sprintf(name, "VarUI1FromI1");
+    #####: 1433:        break;
+    #####: 1434:      case 238:
+    #####: 1435:        sprintf(name, "VarUI1FromUI2");
+    #####: 1436:        break;
+    #####: 1437:      case 239:
+    #####: 1438:        sprintf(name, "VarUI1FromUI4");
+    #####: 1439:        break;
+    #####: 1440:      case 240:
+    #####: 1441:        sprintf(name, "VarUI1FromDec");
+    #####: 1442:        break;
+    #####: 1443:      case 241:
+    #####: 1444:        sprintf(name, "VarDecFromI1");
+    #####: 1445:        break;
+    #####: 1446:      case 242:
+    #####: 1447:        sprintf(name, "VarDecFromUI2");
+    #####: 1448:        break;
+    #####: 1449:      case 243:
+    #####: 1450:        sprintf(name, "VarDecFromUI4");
+    #####: 1451:        break;
+    #####: 1452:      case 244:
+    #####: 1453:        sprintf(name, "VarI1FromUI1");
+    #####: 1454:        break;
+    #####: 1455:      case 245:
+    #####: 1456:        sprintf(name, "VarI1FromI2");
+    #####: 1457:        break;
+    #####: 1458:      case 246:
+    #####: 1459:        sprintf(name, "VarI1FromI4");
+    #####: 1460:        break;
+    #####: 1461:      case 247:
+    #####: 1462:        sprintf(name, "VarI1FromR4");
+    #####: 1463:        break;
+    #####: 1464:      case 248:
+    #####: 1465:        sprintf(name, "VarI1FromR8");
+    #####: 1466:        break;
+    #####: 1467:      case 249:
+    #####: 1468:        sprintf(name, "VarI1FromDate");
+    #####: 1469:        break;
+    #####: 1470:      case 250:
+    #####: 1471:        sprintf(name, "VarI1FromCy");
+    #####: 1472:        break;
+    #####: 1473:      case 251:
+    #####: 1474:        sprintf(name, "VarI1FromStr");
+    #####: 1475:        break;
+    #####: 1476:      case 252:
+    #####: 1477:        sprintf(name, "VarI1FromDisp");
+    #####: 1478:        break;
+    #####: 1479:      case 253:
+    #####: 1480:        sprintf(name, "VarI1FromBool");
+    #####: 1481:        break;
+    #####: 1482:      case 254:
+    #####: 1483:        sprintf(name, "VarI1FromUI2");
+    #####: 1484:        break;
+    #####: 1485:      case 255:
+    #####: 1486:        sprintf(name, "VarI1FromUI4");
+    #####: 1487:        break;
+    #####: 1488:      case 256:
+    #####: 1489:        sprintf(name, "VarI1FromDec");
+    #####: 1490:        break;
+    #####: 1491:      case 257:
+    #####: 1492:        sprintf(name, "VarUI2FromUI1");
+    #####: 1493:        break;
+    #####: 1494:      case 258:
+    #####: 1495:        sprintf(name, "VarUI2FromI2");
+    #####: 1496:        break;
+    #####: 1497:      case 259:
+    #####: 1498:        sprintf(name, "VarUI2FromI4");
+    #####: 1499:        break;
+    #####: 1500:      case 260:
+    #####: 1501:        sprintf(name, "VarUI2FromR4");
+    #####: 1502:        break;
+    #####: 1503:      case 261:
+    #####: 1504:        sprintf(name, "VarUI2FromR8");
+    #####: 1505:        break;
+    #####: 1506:      case 262:
+    #####: 1507:        sprintf(name, "VarUI2FromDate");
+    #####: 1508:        break;
+    #####: 1509:      case 263:
+    #####: 1510:        sprintf(name, "VarUI2FromCy");
+    #####: 1511:        break;
+    #####: 1512:      case 264:
+    #####: 1513:        sprintf(name, "VarUI2FromStr");
+    #####: 1514:        break;
+    #####: 1515:      case 265:
+    #####: 1516:        sprintf(name, "VarUI2FromDisp");
+    #####: 1517:        break;
+    #####: 1518:      case 266:
+    #####: 1519:        sprintf(name, "VarUI2FromBool");
+    #####: 1520:        break;
+    #####: 1521:      case 267:
+    #####: 1522:        sprintf(name, "VarUI2FromI1");
+    #####: 1523:        break;
+    #####: 1524:      case 268:
+    #####: 1525:        sprintf(name, "VarUI2FromUI4");
+    #####: 1526:        break;
+    #####: 1527:      case 269:
+    #####: 1528:        sprintf(name, "VarUI2FromDec");
+    #####: 1529:        break;
+    #####: 1530:      case 270:
+    #####: 1531:        sprintf(name, "VarUI4FromUI1");
+    #####: 1532:        break;
+    #####: 1533:      case 271:
+    #####: 1534:        sprintf(name, "VarUI4FromI2");
+    #####: 1535:        break;
+    #####: 1536:      case 272:
+    #####: 1537:        sprintf(name, "VarUI4FromI4");
+    #####: 1538:        break;
+    #####: 1539:      case 273:
+    #####: 1540:        sprintf(name, "VarUI4FromR4");
+    #####: 1541:        break;
+    #####: 1542:      case 274:
+    #####: 1543:        sprintf(name, "VarUI4FromR8");
+    #####: 1544:        break;
+    #####: 1545:      case 275:
+    #####: 1546:        sprintf(name, "VarUI4FromDate");
+    #####: 1547:        break;
+    #####: 1548:      case 276:
+    #####: 1549:        sprintf(name, "VarUI4FromCy");
+    #####: 1550:        break;
+    #####: 1551:      case 277:
+    #####: 1552:        sprintf(name, "VarUI4FromStr");
+    #####: 1553:        break;
+    #####: 1554:      case 278:
+    #####: 1555:        sprintf(name, "VarUI4FromDisp");
+    #####: 1556:        break;
+    #####: 1557:      case 279:
+    #####: 1558:        sprintf(name, "VarUI4FromBool");
+    #####: 1559:        break;
+    #####: 1560:      case 280:
+    #####: 1561:        sprintf(name, "VarUI4FromI1");
+    #####: 1562:        break;
+    #####: 1563:      case 281:
+    #####: 1564:        sprintf(name, "VarUI4FromUI2");
+    #####: 1565:        break;
+    #####: 1566:      case 282:
+    #####: 1567:        sprintf(name, "VarUI4FromDec");
+    #####: 1568:        break;
+    #####: 1569:      case 283:
+    #####: 1570:        sprintf(name, "BSTR_UserSize");
+    #####: 1571:        break;
+    #####: 1572:      case 284:
+    #####: 1573:        sprintf(name, "BSTR_UserMarshal");
+    #####: 1574:        break;
+    #####: 1575:      case 285:
+    #####: 1576:        sprintf(name, "BSTR_UserUnmarshal");
+    #####: 1577:        break;
+    #####: 1578:      case 286:
+    #####: 1579:        sprintf(name, "BSTR_UserFree");
+    #####: 1580:        break;
+    #####: 1581:      case 287:
+    #####: 1582:        sprintf(name, "VARIANT_UserSize");
+    #####: 1583:        break;
+    #####: 1584:      case 288:
+    #####: 1585:        sprintf(name, "VARIANT_UserMarshal");
+    #####: 1586:        break;
+    #####: 1587:      case 289:
+    #####: 1588:        sprintf(name, "VARIANT_UserUnmarshal");
+    #####: 1589:        break;
+    #####: 1590:      case 290:
+    #####: 1591:        sprintf(name, "VARIANT_UserFree");
+    #####: 1592:        break;
+    #####: 1593:      case 291:
+    #####: 1594:        sprintf(name, "LPSAFEARRAY_UserSize");
+    #####: 1595:        break;
+    #####: 1596:      case 292:
+    #####: 1597:        sprintf(name, "LPSAFEARRAY_UserMarshal");
+    #####: 1598:        break;
+    #####: 1599:      case 293:
+    #####: 1600:        sprintf(name, "LPSAFEARRAY_UserUnmarshal");
+    #####: 1601:        break;
+    #####: 1602:      case 294:
+    #####: 1603:        sprintf(name, "LPSAFEARRAY_UserFree");
+    #####: 1604:        break;
+    #####: 1605:      case 295:
+    #####: 1606:        sprintf(name, "LPSAFEARRAY_Size");
+    #####: 1607:        break;
+    #####: 1608:      case 296:
+    #####: 1609:        sprintf(name, "LPSAFEARRAY_Marshal");
+    #####: 1610:        break;
+    #####: 1611:      case 297:
+    #####: 1612:        sprintf(name, "LPSAFEARRAY_Unmarshal");
+    #####: 1613:        break;
+    #####: 1614:      case 298:
+    #####: 1615:        sprintf(name, "VarDecCmpR8");
+    #####: 1616:        break;
+    #####: 1617:      case 299:
+    #####: 1618:        sprintf(name, "VarCyAdd");
+    #####: 1619:        break;
+    #####: 1620:      case 300:
+    #####: 1621:        sprintf(name, "DllUnregisterServer");
+    #####: 1622:        break;
+    #####: 1623:      case 301:
+    #####: 1624:        sprintf(name, "OACreateTypeLib2");
+    #####: 1625:        break;
+    #####: 1626:      case 303:
+    #####: 1627:        sprintf(name, "VarCyMul");
+    #####: 1628:        break;
+    #####: 1629:      case 304:
+    #####: 1630:        sprintf(name, "VarCyMulI4");
+    #####: 1631:        break;
+    #####: 1632:      case 305:
+    #####: 1633:        sprintf(name, "VarCySub");
+    #####: 1634:        break;
+    #####: 1635:      case 306:
+    #####: 1636:        sprintf(name, "VarCyAbs");
+    #####: 1637:        break;
+    #####: 1638:      case 307:
+    #####: 1639:        sprintf(name, "VarCyFix");
+    #####: 1640:        break;
+    #####: 1641:      case 308:
+    #####: 1642:        sprintf(name, "VarCyInt");
+    #####: 1643:        break;
+    #####: 1644:      case 309:
+    #####: 1645:        sprintf(name, "VarCyNeg");
+    #####: 1646:        break;
+    #####: 1647:      case 310:
+    #####: 1648:        sprintf(name, "VarCyRound");
+    #####: 1649:        break;
+    #####: 1650:      case 311:
+    #####: 1651:        sprintf(name, "VarCyCmp");
+    #####: 1652:        break;
+    #####: 1653:      case 312:
+    #####: 1654:        sprintf(name, "VarCyCmpR8");
+    #####: 1655:        break;
+    #####: 1656:      case 313:
+    #####: 1657:        sprintf(name, "VarBstrCat");
+    #####: 1658:        break;
+    #####: 1659:      case 314:
+    #####: 1660:        sprintf(name, "VarBstrCmp");
+    #####: 1661:        break;
+    #####: 1662:      case 315:
+    #####: 1663:        sprintf(name, "VarR8Pow");
+    #####: 1664:        break;
+    #####: 1665:      case 316:
+    #####: 1666:        sprintf(name, "VarR4CmpR8");
+    #####: 1667:        break;
+    #####: 1668:      case 317:
+    #####: 1669:        sprintf(name, "VarR8Round");
+    #####: 1670:        break;
+    #####: 1671:      case 318:
+    #####: 1672:        sprintf(name, "VarCat");
+    #####: 1673:        break;
+    #####: 1674:      case 319:
+    #####: 1675:        sprintf(name, "VarDateFromUdateEx");
+    #####: 1676:        break;
+    #####: 1677:      case 322:
+    #####: 1678:        sprintf(name, "GetRecordInfoFromGuids");
+    #####: 1679:        break;
+    #####: 1680:      case 323:
+    #####: 1681:        sprintf(name, "GetRecordInfoFromTypeInfo");
+    #####: 1682:        break;
+    #####: 1683:      case 325:
+    #####: 1684:        sprintf(name, "SetVarConversionLocaleSetting");
+    #####: 1685:        break;
+    #####: 1686:      case 326:
+    #####: 1687:        sprintf(name, "GetVarConversionLocaleSetting");
+    #####: 1688:        break;
+    #####: 1689:      case 327:
+    #####: 1690:        sprintf(name, "SetOaNoCache");
+    #####: 1691:        break;
+    #####: 1692:      case 329:
+    #####: 1693:        sprintf(name, "VarCyMulI8");
+    #####: 1694:        break;
+    #####: 1695:      case 330:
+    #####: 1696:        sprintf(name, "VarDateFromUdate");
+    #####: 1697:        break;
+    #####: 1698:      case 331:
+    #####: 1699:        sprintf(name, "VarUdateFromDate");
+    #####: 1700:        break;
+    #####: 1701:      case 332:
+    #####: 1702:        sprintf(name, "GetAltMonthNames");
+    #####: 1703:        break;
+    #####: 1704:      case 333:
+    #####: 1705:        sprintf(name, "VarI8FromUI1");
+    #####: 1706:        break;
+    #####: 1707:      case 334:
+    #####: 1708:        sprintf(name, "VarI8FromI2");
+    #####: 1709:        break;
+    #####: 1710:      case 335:
+    #####: 1711:        sprintf(name, "VarI8FromR4");
+    #####: 1712:        break;
+    #####: 1713:      case 336:
+    #####: 1714:        sprintf(name, "VarI8FromR8");
+    #####: 1715:        break;
+    #####: 1716:      case 337:
+    #####: 1717:        sprintf(name, "VarI8FromCy");
+    #####: 1718:        break;
+    #####: 1719:      case 338:
+    #####: 1720:        sprintf(name, "VarI8FromDate");
+    #####: 1721:        break;
+    #####: 1722:      case 339:
+    #####: 1723:        sprintf(name, "VarI8FromStr");
+    #####: 1724:        break;
+    #####: 1725:      case 340:
+    #####: 1726:        sprintf(name, "VarI8FromDisp");
+    #####: 1727:        break;
+    #####: 1728:      case 341:
+    #####: 1729:        sprintf(name, "VarI8FromBool");
+    #####: 1730:        break;
+    #####: 1731:      case 342:
+    #####: 1732:        sprintf(name, "VarI8FromI1");
+    #####: 1733:        break;
+    #####: 1734:      case 343:
+    #####: 1735:        sprintf(name, "VarI8FromUI2");
+    #####: 1736:        break;
+    #####: 1737:      case 344:
+    #####: 1738:        sprintf(name, "VarI8FromUI4");
+    #####: 1739:        break;
+    #####: 1740:      case 345:
+    #####: 1741:        sprintf(name, "VarI8FromDec");
+    #####: 1742:        break;
+    #####: 1743:      case 346:
+    #####: 1744:        sprintf(name, "VarI2FromI8");
+    #####: 1745:        break;
+    #####: 1746:      case 347:
+    #####: 1747:        sprintf(name, "VarI2FromUI8");
+    #####: 1748:        break;
+    #####: 1749:      case 348:
+    #####: 1750:        sprintf(name, "VarI4FromI8");
+    #####: 1751:        break;
+    #####: 1752:      case 349:
+    #####: 1753:        sprintf(name, "VarI4FromUI8");
+    #####: 1754:        break;
+    #####: 1755:      case 360:
+    #####: 1756:        sprintf(name, "VarR4FromI8");
+    #####: 1757:        break;
+    #####: 1758:      case 361:
+    #####: 1759:        sprintf(name, "VarR4FromUI8");
+    #####: 1760:        break;
+    #####: 1761:      case 362:
+    #####: 1762:        sprintf(name, "VarR8FromI8");
+    #####: 1763:        break;
+    #####: 1764:      case 363:
+    #####: 1765:        sprintf(name, "VarR8FromUI8");
+    #####: 1766:        break;
+    #####: 1767:      case 364:
+    #####: 1768:        sprintf(name, "VarDateFromI8");
+    #####: 1769:        break;
+    #####: 1770:      case 365:
+    #####: 1771:        sprintf(name, "VarDateFromUI8");
+    #####: 1772:        break;
+    #####: 1773:      case 366:
+    #####: 1774:        sprintf(name, "VarCyFromI8");
+    #####: 1775:        break;
+    #####: 1776:      case 367:
+    #####: 1777:        sprintf(name, "VarCyFromUI8");
+    #####: 1778:        break;
+    #####: 1779:      case 368:
+    #####: 1780:        sprintf(name, "VarBstrFromI8");
+    #####: 1781:        break;
+    #####: 1782:      case 369:
+    #####: 1783:        sprintf(name, "VarBstrFromUI8");
+    #####: 1784:        break;
+    #####: 1785:      case 370:
+    #####: 1786:        sprintf(name, "VarBoolFromI8");
+    #####: 1787:        break;
+    #####: 1788:      case 371:
+    #####: 1789:        sprintf(name, "VarBoolFromUI8");
+    #####: 1790:        break;
+    #####: 1791:      case 372:
+    #####: 1792:        sprintf(name, "VarUI1FromI8");
+    #####: 1793:        break;
+    #####: 1794:      case 373:
+    #####: 1795:        sprintf(name, "VarUI1FromUI8");
+    #####: 1796:        break;
+    #####: 1797:      case 374:
+    #####: 1798:        sprintf(name, "VarDecFromI8");
+    #####: 1799:        break;
+    #####: 1800:      case 375:
+    #####: 1801:        sprintf(name, "VarDecFromUI8");
+    #####: 1802:        break;
+    #####: 1803:      case 376:
+    #####: 1804:        sprintf(name, "VarI1FromI8");
+    #####: 1805:        break;
+    #####: 1806:      case 377:
+    #####: 1807:        sprintf(name, "VarI1FromUI8");
+    #####: 1808:        break;
+    #####: 1809:      case 378:
+    #####: 1810:        sprintf(name, "VarUI2FromI8");
+    #####: 1811:        break;
+    #####: 1812:      case 379:
+    #####: 1813:        sprintf(name, "VarUI2FromUI8");
+    #####: 1814:        break;
+    #####: 1815:      case 401:
+    #####: 1816:        sprintf(name, "OleLoadPictureEx");
+    #####: 1817:        break;
+    #####: 1818:      case 402:
+    #####: 1819:        sprintf(name, "OleLoadPictureFileEx");
+    #####: 1820:        break;
+    #####: 1821:      case 411:
+    #####: 1822:        sprintf(name, "SafeArrayCreateVector");
+    #####: 1823:        break;
+    #####: 1824:      case 412:
+    #####: 1825:        sprintf(name, "SafeArrayCopyData");
+    #####: 1826:        break;
+    #####: 1827:      case 413:
+    #####: 1828:        sprintf(name, "VectorFromBstr");
+    #####: 1829:        break;
+    #####: 1830:      case 414:
+    #####: 1831:        sprintf(name, "BstrFromVector");
+    #####: 1832:        break;
+    #####: 1833:      case 415:
+    #####: 1834:        sprintf(name, "OleIconToCursor");
+    #####: 1835:        break;
+    #####: 1836:      case 416:
+    #####: 1837:        sprintf(name, "OleCreatePropertyFrameIndirect");
+    #####: 1838:        break;
+    #####: 1839:      case 417:
+    #####: 1840:        sprintf(name, "OleCreatePropertyFrame");
+    #####: 1841:        break;
+    #####: 1842:      case 418:
+    #####: 1843:        sprintf(name, "OleLoadPicture");
+    #####: 1844:        break;
+    #####: 1845:      case 419:
+    #####: 1846:        sprintf(name, "OleCreatePictureIndirect");
+    #####: 1847:        break;
+    #####: 1848:      case 420:
+    #####: 1849:        sprintf(name, "OleCreateFontIndirect");
+    #####: 1850:        break;
+    #####: 1851:      case 421:
+    #####: 1852:        sprintf(name, "OleTranslateColor");
+    #####: 1853:        break;
+    #####: 1854:      case 422:
+    #####: 1855:        sprintf(name, "OleLoadPictureFile");
+    #####: 1856:        break;
+    #####: 1857:      case 423:
+    #####: 1858:        sprintf(name, "OleSavePictureFile");
+    #####: 1859:        break;
+    #####: 1860:      case 424:
+    #####: 1861:        sprintf(name, "OleLoadPicturePath");
+    #####: 1862:        break;
+    #####: 1863:      case 425:
+    #####: 1864:        sprintf(name, "VarUI4FromI8");
+    #####: 1865:        break;
+    #####: 1866:      case 426:
+    #####: 1867:        sprintf(name, "VarUI4FromUI8");
+    #####: 1868:        break;
+    #####: 1869:      case 427:
+    #####: 1870:        sprintf(name, "VarI8FromUI8");
+    #####: 1871:        break;
+    #####: 1872:      case 428:
+    #####: 1873:        sprintf(name, "VarUI8FromI8");
+    #####: 1874:        break;
+    #####: 1875:      case 429:
+    #####: 1876:        sprintf(name, "VarUI8FromUI1");
+    #####: 1877:        break;
+    #####: 1878:      case 430:
+    #####: 1879:        sprintf(name, "VarUI8FromI2");
+    #####: 1880:        break;
+    #####: 1881:      case 431:
+    #####: 1882:        sprintf(name, "VarUI8FromR4");
+    #####: 1883:        break;
+    #####: 1884:      case 432:
+    #####: 1885:        sprintf(name, "VarUI8FromR8");
+    #####: 1886:        break;
+    #####: 1887:      case 433:
+    #####: 1888:        sprintf(name, "VarUI8FromCy");
+    #####: 1889:        break;
+    #####: 1890:      case 434:
+    #####: 1891:        sprintf(name, "VarUI8FromDate");
+    #####: 1892:        break;
+    #####: 1893:      case 435:
+    #####: 1894:        sprintf(name, "VarUI8FromStr");
+    #####: 1895:        break;
+    #####: 1896:      case 436:
+    #####: 1897:        sprintf(name, "VarUI8FromDisp");
+    #####: 1898:        break;
+    #####: 1899:      case 437:
+    #####: 1900:        sprintf(name, "VarUI8FromBool");
+    #####: 1901:        break;
+    #####: 1902:      case 438:
+    #####: 1903:        sprintf(name, "VarUI8FromI1");
+    #####: 1904:        break;
+    #####: 1905:      case 439:
+    #####: 1906:        sprintf(name, "VarUI8FromUI2");
+    #####: 1907:        break;
+    #####: 1908:      case 440:
+    #####: 1909:        sprintf(name, "VarUI8FromUI4");
+    #####: 1910:        break;
+    #####: 1911:      case 441:
+    #####: 1912:        sprintf(name, "VarUI8FromDec");
+    #####: 1913:        break;
+    #####: 1914:      case 442:
+    #####: 1915:        sprintf(name, "RegisterTypeLibForUser");
+    #####: 1916:        break;
+    #####: 1917:      case 443:
+    #####: 1918:        sprintf(name, "UnRegisterTypeLibForUser");
+    #####: 1919:        break;
+    #####: 1920:      default:
+    #####: 1921:        break;
+        -: 1922:    }
+    #####: 1923:  }
+        -: 1924:
+    #####: 1925:  if (name[0] == '\0')
+    #####: 1926:    sprintf(name, "ord%u", ord);
+        -: 1927:
+    #####: 1928:  return yr_strdup(name);
+        -: 1929:}
