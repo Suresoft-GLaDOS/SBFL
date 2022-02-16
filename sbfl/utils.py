@@ -1,6 +1,7 @@
 import os
 import re
 import pandas as pd
+from tqdm import tqdm
 from . import base
 
 def is_line_coverage(l: str) -> bool:
@@ -80,15 +81,19 @@ def read_gcov(path_to_file, only_coverable=True) -> dict:
 
     return source, coverage
         
-def gcov_files_to_frame(gcov_files: dict, only_coverable=True, only_covered=False):
+def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
+    only_covered=False, verbose=False):
     """ Converts gcov files to a coverage matrix
     
+    If verbose is set to True, a progress bar will be printed.
+
     Parameters
     ----------
     gcov_files : dict
         the mapping from a test name to a list of gcov files
     only_coverable : bool, optional
     only_covered : bool, optional
+    verbose : bool, optional
 
     Returns
     -------
@@ -102,7 +107,7 @@ def gcov_files_to_frame(gcov_files: dict, only_coverable=True, only_covered=Fals
 
     # coverage: source -> line -> test -> hits
     coverage = {}
-    for test in gcov_files:
+    for test in tqdm(gcov_files) if verbose else gcov_files:
         for path_to_file in gcov_files[test]:
             source, line_coverage = read_gcov(
                 path_to_file, only_coverable=only_coverable)
