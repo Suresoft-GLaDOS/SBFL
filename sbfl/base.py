@@ -24,9 +24,11 @@ class SBFL:
 
     @staticmethod
     def validate_input(X, y):
+        X = np.asanyarray(X)
+        y = np.asanyarray(y).astype(bool)
         X, y = check_X_y(X, y, accept_sparse=False, dtype=bool,
             ensure_2d=True, y_numeric=True, multi_output=False)
-        if np.invert(y).sum() == 0:
+        if (y==0).sum() == 0:
             raise NoFailingTestError
         return X, y
 
