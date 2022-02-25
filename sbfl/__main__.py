@@ -27,16 +27,16 @@ def _check_gcov_dirs(gcov_dirs):
     ret = True
     for d in gcov_dirs:
         if not Path(d).exists():
-            print(f'{d} not exists')
+            print(f'{d} not exists.')
             ret = False
             continue
         if not Path(d).is_dir():
-            print(f'{d} is not a directory')
+            print(f'{d} is not a directory.')
             ret = False
             continue
         glob_test_files = list(Path(d).glob('*.test'))
         if len(glob_test_files) != 1:
-            print(f'{d} should have one and only test result file')
+            print(f'{d} should have one and only test result file.')
             ret = False
             continue
     return ret
@@ -55,14 +55,21 @@ def _get_failing_tests(gcov_dirs):
 
 def main():
     args = _argparse()
+
+    sbfl = SBFL(formula=args.formula[0])
+
     gcov_dirs = []
     for d in args.dirs:
         gcov_dirs.extend(Path('.').glob(d))
     _check_gcov_dirs(gcov_dirs) or exit(1)
-    sbfl = SBFL(formula=args.formula[0])
     failing_tests = _get_failing_tests(gcov_dirs)
+
     gcov_files = {Path(d): list(Path(d).glob('*.gcov')) for d in gcov_dirs}
+    if len(gcov_files) == 0:
+        print('Gcov file not found.')
+        exit(1)
     cov_df = gcov_files_to_frame(gcov_files, only_covered=True)
+
     sbfl_score = get_sbfl_scores_from_frame(cov_df, sbfl=sbfl, failing_tests=failing_tests)
     print(sbfl_score)
 
