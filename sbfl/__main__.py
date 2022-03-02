@@ -1,4 +1,5 @@
 import argparse
+import pandas
 from pathlib import Path
 from sbfl.base import SBFL
 from sbfl.utils import gcov_files_to_frame, get_sbfl_scores_from_frame
@@ -71,6 +72,8 @@ def main():
     cov_df = gcov_files_to_frame(gcov_files, only_covered=True)
 
     sbfl_score = get_sbfl_scores_from_frame(cov_df, sbfl=sbfl, failing_tests=failing_tests)
+    pandas.set_option('display.max_rows', sbfl_score.shape[0]+1)
+
     print(sbfl_score)
 
 
