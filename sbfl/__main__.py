@@ -26,6 +26,9 @@ def _argparse():
 
 def _check_gcov_dirs(gcov_dirs):
     ret = True
+    if gcov_dirs is None or gcov_dirs == []:
+        print(f'No gcov dirs are matched.')
+        return False
     for d in gcov_dirs:
         if not Path(d).exists():
             print(f'{d} not exists.')
