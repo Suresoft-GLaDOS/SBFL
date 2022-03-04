@@ -2,7 +2,7 @@ import pytest
 import sys
 from pathlib import Path
 from unittest.mock import patch
-from sbfl.__main__ import main, _check_gcov_dirs
+from sbfl.__main__ import main, _check_gcov_dirs, _argparse
 
 RESOURCES_PATH = Path(__file__).parent.parent / 'resources'
 
@@ -14,6 +14,15 @@ def test_help_message(capsys):
         captured = capsys.readouterr()
         assert pytest_wrapped_e.type == SystemExit
         assert captured.out.startswith('usage: sbfl')
+
+
+def test_argument_formula_is_required(capsys):
+    with patch.object(sys, 'argv', ['sbfl', str((RESOURCES_PATH / 'yara-buggy#3-100'))]):
+        with pytest.raises(SystemExit) as pytest_wrapped_e:
+            _argparse()
+        captured = capsys.readouterr()
+        assert pytest_wrapped_e.type == SystemExit
+        assert captured.err.endswith('-f/--formula\n')
 
 
 def test_check_gcov_dirs():

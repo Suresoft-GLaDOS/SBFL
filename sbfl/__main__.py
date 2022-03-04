@@ -20,14 +20,17 @@ def _argparse():
                         nargs=1,
                         type=str,
                         choices=_get_choices(),
+                        required=True,
                         help='sbfl formula')
-    parser.add_argument('dirs', nargs='+', help='directory to each search for gcov files')
+    parser.add_argument('dirs',
+                        nargs='+',
+                        help='gcov data directories')
     parser.add_argument('-j',
                         '--json-out',
                         dest='json_out',
                         nargs=1,
                         type=str,
-                        help='Write json output file')
+                        help='json output')
     return parser.parse_args()
 
 
