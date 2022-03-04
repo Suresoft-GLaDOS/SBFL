@@ -1,5 +1,6 @@
 import argparse
 import pandas
+import json
 from pathlib import Path
 from sbfl.base import SBFL
 from sbfl.utils import gcov_files_to_frame, get_sbfl_scores_from_frame
@@ -21,6 +22,12 @@ def _argparse():
                         choices=_get_choices(),
                         help='sbfl formula')
     parser.add_argument('dirs', nargs='+', help='directory to each search for gcov files')
+    parser.add_argument('-j',
+                        '--json-out',
+                        dest='json_out',
+                        nargs=1,
+                        type=str,
+                        help='Write json output file')
     return parser.parse_args()
 
 
@@ -57,6 +64,14 @@ def _get_failing_tests(gcov_dirs):
     return ret
 
 
+def _write_json_output(sbfl_score, json_path):
+    sbfl_score.reset_index()
+    sbfl_list = [[index[0], index[1], row['score']] for index, row in sbfl_score.iterrows()]
+    with open(json_path, 'w') as f:
+        json.dump(sbfl_list, f, indent=4)
+    sbfl_json_list = json.dumps(sbfl_list,  indent=4)
+
+
 def main():
     args = _argparse()
 
@@ -75,11 +90,13 @@ def main():
     cov_df = gcov_files_to_frame(gcov_files, only_covered=True)
 
     sbfl_score = get_sbfl_scores_from_frame(cov_df, sbfl=sbfl, failing_tests=failing_tests)
-    pandas.set_option('display.max_rows', sbfl_score.shape[0]+1)
 
-    print(sbfl_score)
+    if args.json_out is not None:
+        _write_json_output(sbfl_score, args.json_out[0])
+    else:
+        pandas.set_option('display.max_rows', sbfl_score.shape[0] + 1)
+        print(sbfl_score)
 
 
 if __name__ == '__main__':
     main()
-
