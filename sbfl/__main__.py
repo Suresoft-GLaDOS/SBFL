@@ -4,13 +4,7 @@ import json
 import sys
 from pathlib import Path
 from sbfl.base import SBFL
-from sbfl.utils import gcov_files_to_frame, get_sbfl_scores_from_frame
-
-
-def _sbfl_formla():
-    from inspect import getmembers, isfunction
-    from sbfl import sbfl_formula
-    return [x[0] for x in getmembers(sbfl_formula, isfunction)]
+from sbfl.utils import gcov_files_to_frame, get_sbfl_scores_from_frame, sbfl_formula_list, get_coverage_info_from_frame
 
 
 def _argparse():
@@ -20,9 +14,14 @@ def _argparse():
                         dest='formula',
                         nargs=1,
                         type=str,
-                        choices=_sbfl_formla(),
+                        choices=sbfl_formula_list(),
                         required=True,
                         help='sbfl formula')
+    parser.add_argument('-v',
+                        '--verbose',
+                        dest='verbose',
+                        action='store_true',
+                        help='verbose output')
     parser.add_argument('dirs',
                         nargs='+',
                         help='gcov data directories')
@@ -62,7 +61,7 @@ def main():
     for d in args.dirs:
         gcov_dirs.extend(Path('.').glob(d))
 
-    test_info = TestInformation(sbfl, gcov_dirs)
+    test_info = TestInformation(sbfl, gcov_dirs, verbose=args.verbose)
     sbfl_score = get_sbfl_scores_from_frame(test_info.cov_df,
                                             sbfl=test_info.sbfl,
                                             failing_tests=test_info.failing_tests)
@@ -90,7 +89,8 @@ class TestInformation:
             raise ValueError("No gcov files found.")
         self.all_sources_set = self._all_sources_set()
         self.passing_tests, self.failing_tests = self._classify_tests()
-        self.cov_df = gcov_files_to_frame(self.gcov_files, only_covered=True)
+        self.cov_df = gcov_files_to_frame(self.gcov_files, only_coverable=True, verbose=verbose)
+        self.covered_lines, self.total_lines = get_coverage_info_from_frame(self.cov_df)
 
     def to_dict(self):
         return {
@@ -100,7 +100,7 @@ class TestInformation:
                 'failing': [str(path) for path in self.failing_tests],
             },
             'sources': list(self.all_sources_set),
-            'coverage': 50.32
+            'coverage': f'{(self.covered_lines / self.total_lines):.4f}'
         }
 
     def _all_sources_set(self):

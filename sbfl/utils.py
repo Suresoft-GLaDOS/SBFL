@@ -178,6 +178,19 @@ def get_sbfl_scores_from_frame(cov_df, failing_tests, sbfl=None):
     sbfl.fit(X, y)
     return sbfl.to_frame(index=cov_df.index)
 
+
+def get_coverage_info_from_frame(cov_df):
+    """
+    calculate coverage info
+    returns:
+        total lines: int
+        covered lines: int
+    """
+    covered_lines = len([cov for cov in cov_df.T.sum() if cov > 0])
+    total_lines = len(cov_df)
+    return covered_lines, total_lines
+
+
 def read_dfcpp_coverage(d4cpp_output_dir, **kwargs):
     """
     Returns coverage data
@@ -216,3 +229,9 @@ def read_dfcpp_test_results(d4cpp_output_dir):
             test_results[case] = f.read().strip()
 
     return test_results
+
+
+def sbfl_formula_list():
+    from inspect import getmembers, isfunction
+    from sbfl import sbfl_formula
+    return [x[0] for x in getmembers(sbfl_formula, isfunction)]
