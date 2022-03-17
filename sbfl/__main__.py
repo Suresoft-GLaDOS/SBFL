@@ -100,7 +100,7 @@ class TestInformation:
                 'failing': [str(path) for path in self.failing_tests],
             },
             'sources': list(self.all_sources_set),
-            'coverage': f'{(self.covered_lines / self.total_lines):.4f}'
+            'coverage': f'{(self.covered_lines / self.total_lines)*100:.2f}'
         }
 
     def _all_sources_set(self):
