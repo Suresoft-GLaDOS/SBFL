@@ -2,7 +2,8 @@ import pytest
 import sys
 from pathlib import Path
 from unittest.mock import patch
-from sbfl.__main__ import main, _check_gcov_dirs, _argparse
+from sbfl.__main__ import TestInformation, main, _argparse
+from sbfl.base import SBFL
 
 RESOURCES_PATH = Path(__file__).parent.parent / 'resources'
 
@@ -22,12 +23,19 @@ def test_argument_formula_is_required(capsys):
             _argparse()
         captured = capsys.readouterr()
         assert pytest_wrapped_e.type == SystemExit
-        assert captured.err.endswith('-f/--formula\n')
+        assert captured.err.startswith('usage:') and captured.err.endswith('-f/--formula\n')
 
 
-def test_check_gcov_dirs():
-    assert not _check_gcov_dirs(None)
-    assert not _check_gcov_dirs([])
-    assert not _check_gcov_dirs([RESOURCES_PATH / 'yara-buggy#3-100' / '100.output'])
-    assert _check_gcov_dirs([RESOURCES_PATH / 'yara-buggy#3-100'])
-    assert _check_gcov_dirs([d for d in RESOURCES_PATH.glob('yara-buggy#3-1*')])
+@pytest.mark.parametrize('gcov_dirs,expect_error', [
+    ([], True),
+    ([RESOURCES_PATH / 'yara-buggy#3-100' / '100.output'], True),
+    ([RESOURCES_PATH / 'yara-buggy#3-100'], False),
+    ([d for d in RESOURCES_PATH.glob('yara-buggy#3-1*')], False)
+])
+def test_check_gcov_dirs(gcov_dirs, expect_error):
+    sbfl = SBFL(formula='Ochiai')
+    if expect_error:
+        with pytest.raises(ValueError):
+            TestInformation(sbfl, gcov_dirs)
+    else:
+        TestInformation(sbfl, gcov_dirs)
