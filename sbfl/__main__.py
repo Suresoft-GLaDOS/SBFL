@@ -2,6 +2,7 @@ import argparse
 import pandas
 import json
 import sys
+import glob
 from pathlib import Path
 from sbfl.base import SBFL
 from sbfl.utils import gcov_files_to_frame, get_sbfl_scores_from_frame, sbfl_formula_list, get_coverage_info_from_frame
@@ -32,7 +33,7 @@ def _argparse():
                         type=str,
                         help='sbfl data in json format')
     parser.add_argument('-i',
-                        '--information-out',
+                        '--info-out',
                         dest='info_out',
                         nargs=1,
                         type=str,
@@ -59,7 +60,7 @@ def main():
 
     gcov_dirs = []
     for d in args.dirs:
-        gcov_dirs.extend(Path('.').glob(d))
+        gcov_dirs.extend(glob.glob(d))
 
     test_info = TestInformation(sbfl, gcov_dirs, verbose=args.verbose)
     sbfl_score = get_sbfl_scores_from_frame(test_info.cov_df,
