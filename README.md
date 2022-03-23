@@ -16,7 +16,7 @@
 git clone https://github.com/Suresoft-GLaDOS/SBFL
 cd SBFL
 pip install setuptools
-python setup.py install # or pip install -e .
+pip install -e .
 ```
 
 ## Getting Started

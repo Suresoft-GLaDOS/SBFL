@@ -1,6 +1,7 @@
 import os
 import re
 import pandas as pd
+from tqdm import tqdm
 from . import base
 
 def is_line_coverage(l: str) -> bool:
@@ -27,7 +28,7 @@ def parse_gcov_line(l: str) -> tuple:
 
     return hits, lineno, content
 
-def read_gcov(path_to_file, only_coverable=True) -> dict:
+def read_gcov(path_to_file, only_coverable=True, encoding='utf-8') -> dict:
     """ Parses a gcov file
 
     Parameters
@@ -46,49 +47,56 @@ def read_gcov(path_to_file, only_coverable=True) -> dict:
     """
     source = None
     coverage = {}
-    with open(path_to_file, 'r') as gcov_file:
-        for l in gcov_file:
-            if not is_line_coverage(l):
-                continue
-
-            hits, lineno, content = parse_gcov_line(l)
-
-            if lineno == 0:
-                # read metadata
-                if content.startswith('Source'):
-                    source = content.split(':')[1]
-                continue
-
-            if lineno in coverage and coverage[lineno] > 0:
-                continue
-                # raise Exception("Duplicated", path_to_file, lineno)
-
-            if hits == "-":
-                if only_coverable:
+    try:
+        with open(path_to_file, 'r', encoding=encoding) as gcov_file:
+            for l in gcov_file:
+                if not is_line_coverage(l):
                     continue
+
+                hits, lineno, content = parse_gcov_line(l)
+
+                if lineno == 0:
+                    # read metadata
+                    if content.startswith('Source'):
+                        source = content.split(':')[1]
+                    continue
+
+                if lineno in coverage and coverage[lineno] > 0:
+                    continue
+                    # raise Exception("Duplicated", path_to_file, lineno)
+
+                if hits == "-":
+                    if only_coverable:
+                        continue
+                    else:
+                        coverage[lineno] = -1
+                elif hits == "#####" or hits == "=====":
+                    coverage[lineno] = 0
                 else:
-                    coverage[lineno] = -1
-            elif hits == "#####" or hits == "=====":
-                coverage[lineno] = 0
-            else:
-                if hits.endswith("*"):
-                    hits = hits[:-1]
-                coverage[lineno] = int(hits)
+                    if hits.endswith("*"):
+                        hits = hits[:-1]
+                    coverage[lineno] = int(hits)
+    except Exception as e:
+        raise Exception(f"Error while reading {path_to_file}: {e}")
 
     if source is None:
-        raise Exception(f"Unable to parse {path_to_file}")
+        raise Exception(f"Unable to read soure file from {path_to_file}")
 
     return source, coverage
         
-def gcov_files_to_frame(gcov_files: dict, only_coverable=True, only_covered=False):
+def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
+    only_covered=False, verbose=False, **kwargs):
     """ Converts gcov files to a coverage matrix
     
+    If verbose is set to True, a progress bar will be printed.
+
     Parameters
     ----------
     gcov_files : dict
         the mapping from a test name to a list of gcov files
     only_coverable : bool, optional
     only_covered : bool, optional
+    verbose : bool, optional
 
     Returns
     -------
@@ -102,10 +110,10 @@ def gcov_files_to_frame(gcov_files: dict, only_coverable=True, only_covered=Fals
 
     # coverage: source -> line -> test -> hits
     coverage = {}
-    for test in gcov_files:
+    for test in tqdm(gcov_files) if verbose else gcov_files:
         for path_to_file in gcov_files[test]:
             source, line_coverage = read_gcov(
-                path_to_file, only_coverable=only_coverable)
+                path_to_file, only_coverable=only_coverable, **kwargs)
 
             if source not in coverage:
                 coverage[source] = {}
