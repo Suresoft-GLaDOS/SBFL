@@ -2,17 +2,21 @@ import pandas as pd
 from scipy.stats import rankdata
 
 def _check_aggregation_input(score_df, level, column):
-    if level not in score_df.index.names:
-        raise Exception(f"Level '{level}' is not a valid index level. (level should be one of {score_df.index.names})")
+    if not isinstance(level, (list, tuple)):
+        level = [level]
+    for l in level:
+        if l not in score_df.index.names:
+            raise Exception(f"Level '{l}' is not a valid index level. (level should be one of {score_df.index.names})")
     if column not in score_df.columns:
         raise Exception(f"Column '{column}' is not in the input dataframe")
+    return level
 
 def max_aggregation(score_df, level, column='score'):
-    _check_aggregation_input(score_df, level, column)
+    level = _check_aggregation_input(score_df, level, column)
     return score_df.groupby(level=level).max()[[column]]
 
 def mean_aggregation(score_df, level, column='score'):
-    _check_aggregation_input(score_df, level, column)
+    level = _check_aggregation_input(score_df, level, column)
     return score_df.groupby(level=level).mean()[[column]]
 
 def dense_rank_based_voting(score_df, level, column='score'):
@@ -26,7 +30,7 @@ def dense_rank_based_voting(score_df, level, column='score'):
 
     - See Section V.A.1 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
-    _check_aggregation_input(score_df, level, column)
+    level = _check_aggregation_input(score_df, level, column)
     vote_df = pd.DataFrame(
         data=1/rankdata(-score_df[column], axis=0, method='dense'),
         index=score_df.index,
@@ -46,7 +50,7 @@ def dense_rank_based_tie_aware_voting(score_df, level,
 
     - See Section V.A.2 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
-    _check_aggregation_input(score_df, level, column)
+    level = _check_aggregation_input(score_df, level, column)
     vote_df = pd.DataFrame(
         data=rankdata(-score_df[column], axis=0, method='dense'),
         index=score_df.index,
@@ -67,7 +71,7 @@ def min_rank_based_voting(score_df, level, column='score'):
 
     - See Section V.A.3 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
-    _check_aggregation_input(score_df, level, column)
+    level = _check_aggregation_input(score_df, level, column)
     vote_df = pd.DataFrame(
         data=1/rankdata(-score_df[column], axis=0, method='min'),
         index=score_df.index,
@@ -86,12 +90,12 @@ def dense_rank_based_suspiciousness_aware_voting(score_df, level,
 
     - See Section V.A.4 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
-    _check_aggregation_input(score_df, level, column)
+    level = _check_aggregation_input(score_df, level, column)
     ranks = rankdata(-score_df[column], axis=0, method='dense')
     vote_df = pd.DataFrame(
         data=score_df[column]/ranks,
         index=score_df.index,
         columns=[column]
     )
-    return vote_df.groupby(level=level).sum()
+    return vote_df.groupby(by=level).sum()
 
