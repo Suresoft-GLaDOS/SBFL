@@ -2,6 +2,7 @@ import pytest
 import sys
 import json
 import math
+import numpy
 from pathlib import Path
 from unittest.mock import patch
 from sbfl.__main__ import TestInformation, main, _argparse
@@ -29,10 +30,12 @@ def test_argument_formula_is_required(capsys):
 
 
 def test_outputs(capsys, tmp_path):
+    numpy.seterr(all='raise')
     with patch.object(sys, 'argv', ['sbfl', '-f', 'Ochiai', '--sbfl-out', (tmp_path / 'sbfl.json').as_posix(),
                                     '--info-out', (tmp_path / 'test_info.json').as_posix(),
                                     str(RESOURCES_PATH / 'yara-buggy#3*')]):
         main()
+    captured = capsys.readouterr()
     sbfl_output = json.loads((tmp_path / 'sbfl.json').read_text())
     assert sbfl_output[0][0] == "/usr/include/openssl/x509.h"
     assert sbfl_output[0][1] == 99
@@ -43,7 +46,7 @@ def test_outputs(capsys, tmp_path):
     assert any([('yara-buggy#3-100' in gcov_dir) for gcov_dir in info_output['test']['passing']])
     assert 'yara-buggy#3-102' in info_output['test']['failing'][0]
     assert 'libyara.c.gcov' in info_output['sources']
-    assert info_output['coverage'] == 5.68
+    assert info_output['coverage'] == '5.68'
 
 
 @pytest.mark.parametrize('gcov_dirs,expect_error', [

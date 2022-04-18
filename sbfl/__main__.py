@@ -4,9 +4,12 @@ import json
 import sys
 import glob
 from pathlib import Path
+from collections import defaultdict
 from sbfl.base import SBFL
-from sbfl.utils import gcov_files_to_frame, get_sbfl_scores_from_frame, sbfl_formula_list, get_coverage_info_from_frame
-
+from failure_clustering.failure_clustering.base import FailureDistance
+from failure_clustering.failure_clustering.clustering import Agglomerative
+from sbfl.utils import gcov_files_to_frame, get_sbfl_scores_from_frame, sbfl_formula_list, \
+    get_coverage_info_from_frame, get_X_y
 
 def _argparse():
     parser = argparse.ArgumentParser(prog='sbfl')
@@ -38,6 +41,12 @@ def _argparse():
                         nargs=1,
                         type=str,
                         help='information about test data')
+    parser.add_argument('-c',
+                        '--cluster-out',
+                        dest='cluster_out',
+                        nargs=1,
+                        type=str,
+                        help='cluster data in json format')
     return parser.parse_args()
 
 
@@ -66,6 +75,23 @@ def main():
     sbfl_score = get_sbfl_scores_from_frame(test_info.cov_df,
                                             sbfl=test_info.sbfl,
                                             failing_tests=test_info.failing_tests)
+
+    if args.cluster_out is not None:
+        X, y = get_X_y(test_info.cov_df, failing_tests=test_info.failing_tests)
+        fd = FailureDistance(measure='hdist')
+        distance_matrix, failure_indices = fd.get_distance_matrix(
+            X, y, weights=sbfl.fit_predict(X, y), return_index=True
+        )
+        aggl = Agglomerative(linkage='complete')
+        clustering = aggl.run(distance_matrix,
+                              stopping_criterion='min_intercluster_distance_elbow')
+        # for i, cluster in zip(failure_indices, clustering):
+        #     print(f"Cluster of {gcov_dirs[i]}: {cluster}")
+        cluster_map = defaultdict(list)
+        for i, cluster in zip(failure_indices, clustering):
+            cluster_map[str(cluster)].append(gcov_dirs[i])
+        with open(args.cluster_out[0], 'w') as f:
+            json.dump(dict(cluster_map), f, indent=4)
 
     if args.info_out is not None:
         _write_info_out(test_info.to_dict(), args.info_out[0])

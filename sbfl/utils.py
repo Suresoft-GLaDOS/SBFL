@@ -172,11 +172,16 @@ def get_sbfl_scores_from_frame(cov_df, failing_tests, sbfl=None):
         that has only one column, score
     """
     assert all([t in cov_df.columns for t in failing_tests])
-    X, y = cov_df.values.T > 0, ~cov_df.columns.isin(failing_tests)
+    X, y = get_X_y(cov_df, failing_tests)
     if sbfl is None:
         sbfl = base.SBFL()
     sbfl.fit(X, y)
     return sbfl.to_frame(index=cov_df.index)
+
+
+def get_X_y(cov_df, failing_tests):
+    X, y = cov_df.values.T > 0, ~cov_df.columns.isin(failing_tests)
+    return X, y
 
 
 def get_coverage_info_from_frame(cov_df):
