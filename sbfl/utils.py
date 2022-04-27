@@ -6,7 +6,7 @@ from . import base
 
 def is_function_summary(l: str) -> str or None:
     m = re.match(
-        r"^function (\w+) called \d+ returned \d+% blocks executed \d+%", l
+        r"^function (\S+) called \d+ returned \d+% blocks executed \d+%", l
     )
     if m:
         return m.group(1)
@@ -54,6 +54,7 @@ def read_gcov(path_to_file, only_coverable=True, encoding='utf-8') -> dict:
             -  > 0: coverable and covered (hits == <number>)
     """
     source = None
+    graph = None
     coverage = {}
     function = None
     try:
@@ -72,6 +73,10 @@ def read_gcov(path_to_file, only_coverable=True, encoding='utf-8') -> dict:
                     # read metadata
                     if content.startswith('Source'):
                         source = content.split(':')[1]
+                    if content.startswith('Graph'):
+                        graph = content.split(':')[1]
+                        if not graph.strip():
+                            graph = None
                     continue
 
                 dict_key = (function, lineno)
@@ -96,7 +101,7 @@ def read_gcov(path_to_file, only_coverable=True, encoding='utf-8') -> dict:
     if source is None:
         raise Exception(f"Unable to read soure file from {path_to_file}")
 
-    return source, coverage
+    return source, graph, coverage
         
 def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
     only_covered=False, verbose=False, **kwargs):
@@ -126,9 +131,10 @@ def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
     coverage = {}
     for test in tqdm(gcov_files) if verbose else gcov_files:
         for path_to_file in gcov_files[test]:
-            source, line_coverage = read_gcov(
+            src, grp, line_coverage = read_gcov(
                 path_to_file, only_coverable=only_coverable, **kwargs)
-
+            if grp is not None:
+                source = grp + "//" + src
             if source not in coverage:
                 coverage[source] = {}
 
@@ -138,10 +144,9 @@ def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
 
                 if dict_key not in coverage[source]:
                     coverage[source][dict_key] = {}
-                
-                assert test not in coverage[source][dict_key]
+                if test in coverage[source][dict_key]:
+                     raise Exception(f"{test} is already in coverage[{source}][{dict_key}]")
                 coverage[source][dict_key][test] = hits
-
 
     data = [] # data
     index = [] # two-level index
