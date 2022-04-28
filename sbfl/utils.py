@@ -13,7 +13,7 @@ def is_function_summary(l: str) -> str or None:
     return None
 
 def is_line_coverage(l: str) -> bool:
-    m = re.match(r"^\s+\S+:\s+\d+:", l)
+    m = re.match(r"^\s+\S+:\s*\d+:", l)
     return m is not None
 
 def parse_gcov_line(l: str) -> tuple:
