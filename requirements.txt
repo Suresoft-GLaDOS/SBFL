@@ -2,7 +2,7 @@ attrs==20.3.0
 coverage==5.5
 iniconfig==1.1.1
 joblib==1.0.1
-numpy==1.20.2
+numpy==1.21.0
 packaging==20.9
 pandas==1.2.4
 pluggy==0.13.1
