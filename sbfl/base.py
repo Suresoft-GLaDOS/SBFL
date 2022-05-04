@@ -15,12 +15,14 @@ class NotSupportedFormulaError(Exception):
 
 class SBFL:
     def __init__(self, formula='Ochiai'):
-        supported_formulae = dict(getmembers(sbfl_formula, isfunction))
-        if formula not in supported_formulae:
-            raise NotSupportedFormulaError(f"Supported formulae: {set(supported_formulae.keys())}")
-
+        if callable(formula):
+            self.formula_func = formula
+        else:
+            supported_formulae = dict(getmembers(sbfl_formula, isfunction))
+            if formula not in supported_formulae:
+                raise NotSupportedFormulaError(f"Supported formulae: {set(supported_formulae.keys())}")
+            self.formula_func = supported_formulae[formula]
         self.formula = formula
-        self.formula_func = supported_formulae[formula]
 
     @staticmethod
     def validate_input(X, y):
