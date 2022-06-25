@@ -8,7 +8,7 @@ setup(
     author_email     = 'agb94@kaist.ac.kr',
     url              = 'https://github.com/Suresoft-GLaDOS/SBFL',
     download_url     = 'https://github.com/Suresoft-GLaDOS/SBFL',
-    install_requires = ['numpy==1.21', 'pandas==1.2.4', 'scikit-learn==0.24.2', 'scipy==1.6.3', 'tqdm==4.60.0'],
+    install_requires = ['numpy==1.22.0', 'pandas==1.2.4', 'scikit-learn==0.24.2', 'scipy==1.6.3', 'tqdm==4.60.0'],
     packages         = find_packages(),
     keywords         = ['sbfl'],
     python_requires  = '>=3.8',
