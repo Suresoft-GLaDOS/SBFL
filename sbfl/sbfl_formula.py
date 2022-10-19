@@ -1,7 +1,9 @@
 import numpy as np
+import warnings
 
 def Ochiai(e_p, n_p, e_f, n_f):
-    return e_f/np.sqrt((e_f + n_f) * (e_f + e_p))
+    divisor = np.sqrt((e_f + n_f) * (e_f + e_p))
+    return np.divide(e_f, divisor, where=divisor!=0)
 
 def Tarantula(e_p, n_p, e_f, n_f):
     r_f = e_f/(e_f + n_f)
@@ -105,10 +107,9 @@ def Zoltar(e_p, n_p, e_f, n_f):
     return scores
 
 def Ochiai2(e_p, n_p, e_f, n_f):
-    scores = np.zeros(len(e_f))
-    cond = (e_f != 0) & (n_p != 0)
-    scores[cond] = e_f[cond] * n_p[cond] / np.sqrt((e_f[cond] + e_p[cond]) * (n_f[cond] + n_p[cond]) * (e_f[cond] + n_p[cond]) * (n_f[cond] + e_p[cond]))
-    return scores
+    warnings.warn("[DEPRECATION WARNING] Ochiai2 is deprecated and will be removed in the futher version. Please use other formulas.")
+    divisor = np.sqrt((e_f + e_p) * (n_f + n_p) * (e_f + n_p) * (n_f + e_p))
+    return np.divide(e_f * n_p, divisor, where=divisor!=0)
 
 def Anderberg(e_p, n_p, e_f, n_f):
     return e_f / (e_f + 2 * n_f + 2 * e_p)
@@ -123,4 +124,4 @@ def Euclid(e_p, n_p, e_f, n_f):
     return np.sqrt(e_f + n_p)
 
 def Overlap(e_p, n_p, e_f, n_f):
-    return e_f / np.min(e_f, e_p, n_f)
+    return e_f / np.minimum(np.minimum(e_f, e_p), n_f)

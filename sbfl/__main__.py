@@ -1,6 +1,7 @@
 import argparse
 import pandas
 import json
+import os
 import sys
 import glob
 from pathlib import Path
@@ -10,6 +11,10 @@ from failure_clustering.failure_clustering.base import FailureDistance
 from failure_clustering.failure_clustering.clustering import Agglomerative
 from sbfl.utils import gcov_files_to_frame, get_sbfl_scores_from_frame, sbfl_formula_list, \
     get_coverage_info_from_frame, get_X_y
+
+VULCAN_TARGET = os.getenv("VULCAN_TARGET")
+VULCAN_OUTPUT_DIR = os.getenv("VULCAN_OUTPUT_DIR")
+
 
 def _argparse():
     parser = argparse.ArgumentParser(prog='sbfl')
@@ -52,7 +57,26 @@ def _argparse():
 
 def _write_sbfl_output(sbfl_score, sbfl_out_path):
     sbfl_score.reset_index()
-    sbfl_list = [[index[0], index[1], row['score']] for index, row in sbfl_score.iterrows()]
+    # print("Find map json: " + "/".join(VULCAN_OUTPUT_DIR.split("/")[:-1]) + "/gcov_map.json")
+    print("Find map json: " + VULCAN_OUTPUT_DIR + "/gcov_map.json")
+    map_path_list = glob.glob("/".join(VULCAN_OUTPUT_DIR.split("/")[:-1]) + "/gcov_map.json")
+    map_path = ""
+    if len(map_path_list) == 1:
+        map_path = map_path_list[0]
+    else:
+        map_path = VULCAN_OUTPUT_DIR + "/gcov_map.json"
+
+    map_json = None
+    with open(map_path, 'r', encoding='utf-8') as file:
+        map_json = json.load(file)
+
+    sbfl_list = []
+    for index, row in sbfl_score.iterrows():
+        try:
+            target_path = map_json[index[0].split("/")[-1] + ".gcov"]
+            sbfl_list.append([target_path.replace(f"{VULCAN_TARGET}/", ""), index[1], row['score']])
+        except:
+            continue
     with open(sbfl_out_path, 'w') as f:
         json.dump(sbfl_list, f, indent=4)
 
@@ -109,6 +133,8 @@ class TestInformation:
     def __init__(self, sbfl, gcov_dirs, verbose=False):
         self.sbfl = sbfl
         self.gcov_dirs = gcov_dirs
+        print("Gcov Dirs: ")
+        print(gcov_dirs)
         if not self._check_gcov_dirs():
             raise ValueError("Invalid gcov dirs.")
         self.gcov_files = {Path(d): list(Path(d).glob('*.gcov')) for d in gcov_dirs}
@@ -127,7 +153,7 @@ class TestInformation:
                 'failing': [str(path) for path in self.failing_tests],
             },
             'sources': list(self.all_sources_set),
-            'coverage': f'{(self.covered_lines / self.total_lines)*100:.2f}'
+            'coverage': f'{(self.covered_lines / self.total_lines) * 100:.2f}'
         }
 
     def _all_sources_set(self):

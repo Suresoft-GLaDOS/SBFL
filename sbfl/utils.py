@@ -4,8 +4,16 @@ import pandas as pd
 from tqdm import tqdm
 from . import base
 
+def is_function_summary(l: str) -> str or None:
+    m = re.match(
+        r"^function (\S+) called \d+ returned \d+% blocks executed \d+%", l
+    )
+    if m:
+        return m.group(1)
+    return None
+
 def is_line_coverage(l: str) -> bool:
-    m = re.match(r"^\s+\S+:\s+\d+:", l)
+    m = re.match(r"^\s+\S+:\s*\d+:", l)
     return m is not None
 
 def parse_gcov_line(l: str) -> tuple:
@@ -40,16 +48,22 @@ def read_gcov(path_to_file, only_coverable=True, encoding='utf-8') -> dict:
     -------
     tuple (str, dict)
         a tuple of source file name and dict-type line coverage data
-        line coverage data: dict(lineno: hits)
+        line coverage data: dict(function, lineno: hits)
             -   -1: not coverable (hits == '-')
             -    0: coverable, but not covered (hits == '#####' or '=====')
             -  > 0: coverable and covered (hits == <number>)
     """
     source = None
+    graph = None
     coverage = {}
+    function = None
     try:
         with open(path_to_file, 'r', encoding=encoding) as gcov_file:
             for l in gcov_file:
+                if is_function_summary(l) is not None:
+                    function = is_function_summary(l)
+                    continue
+
                 if not is_line_coverage(l):
                     continue
 
@@ -59,30 +73,35 @@ def read_gcov(path_to_file, only_coverable=True, encoding='utf-8') -> dict:
                     # read metadata
                     if content.startswith('Source'):
                         source = content.split(':')[1]
+                    if content.startswith('Graph'):
+                        graph = content.split(':')[1]
+                        if not graph.strip():
+                            graph = None
                     continue
 
-                if lineno in coverage and coverage[lineno] > 0:
-                    continue
-                    # raise Exception("Duplicated", path_to_file, lineno)
+                dict_key = (function, lineno)
+                if dict_key in coverage and coverage[dict_key] > 0:
+                    raise Exception("Duplicated", path_to_file, dict_key)
 
                 if hits == "-":
                     if only_coverable:
                         continue
                     else:
-                        coverage[lineno] = -1
+                        coverage[dict_key] = -1
                 elif hits == "#####" or hits == "=====":
-                    coverage[lineno] = 0
+                    coverage[dict_key] = 0
                 else:
                     if hits.endswith("*"):
                         hits = hits[:-1]
-                    coverage[lineno] = int(hits)
+                    coverage[dict_key] = int(hits)
+
     except Exception as e:
         raise Exception(f"Error while reading {path_to_file}: {e}")
 
     if source is None:
         raise Exception(f"Unable to read soure file from {path_to_file}")
 
-    return source, coverage
+    return source, graph, coverage
         
 def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
     only_covered=False, verbose=False, **kwargs):
@@ -112,37 +131,39 @@ def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
     coverage = {}
     for test in tqdm(gcov_files) if verbose else gcov_files:
         for path_to_file in gcov_files[test]:
-            source, line_coverage = read_gcov(
+            src, grp, line_coverage = read_gcov(
                 path_to_file, only_coverable=only_coverable, **kwargs)
-
+            if grp is None:
+                source = src
+            else:
+                source = grp + "//" + src
             if source not in coverage:
                 coverage[source] = {}
 
-            source_coverage = coverage[source]
+            for dict_key in line_coverage:
+                function, lineno = dict_key
+                hits = line_coverage[dict_key]
 
-            for line in line_coverage:
-                hits = line_coverage[line]
-
-                if line not in source_coverage:
-                    source_coverage[line] = {}
-                
-                assert test not in source_coverage[line]
-                source_coverage[line][test] = hits
-
+                if dict_key not in coverage[source]:
+                    coverage[source][dict_key] = {}
+                if test in coverage[source][dict_key]:
+                     raise Exception(f"{test} is already in coverage[{source}][{dict_key}]")
+                coverage[source][dict_key][test] = hits
 
     data = [] # data
     index = [] # two-level index
     columns = list(gcov_files) # test case name
 
     for source in coverage:
-        for line in coverage[source]:
-            index.append((source, line))
-            data.append([coverage[source][line].get(test, 0) for test in columns])
+        for dict_key in coverage[source]:
+            function, lineno = dict_key
+            index.append((source, function, lineno))
+            data.append([coverage[source][dict_key].get(test, 0) for test in columns])
 
     # create dataframe
     df = pd.DataFrame(
         data, index=pd.MultiIndex.from_tuples(index,
-                names=['file', 'line']), columns=columns)
+                names=['file', 'function', 'line']), columns=columns)
     
     if only_covered:
         covered = df.values.sum(axis=1) > 0
