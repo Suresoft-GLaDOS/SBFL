@@ -2,6 +2,7 @@ import pytest
 import numpy as np
 from sbfl.base import SBFL
 
+@pytest.fixture
 def X_y_sample_1():
     X = np.array([
         [1,0,1],
@@ -19,8 +20,8 @@ def X_y_sample_1():
 """
 Test `get_spectrum`
 """
-def test_get_spectrum():
-    X, y = X_y_sample_1()
+def test_get_spectrum(X_y_sample_1):
+    X, y = X_y_sample_1
 
     loc = SBFL()
     e_p, n_p, e_f, n_f = loc.get_spectrum(X, y)
@@ -36,8 +37,8 @@ def test_get_spectrum():
 """
 Test `ranks` with different tie breakers
 """
-def test_minrank():
-    X, y = X_y_sample_1()
+def test_minrank(X_y_sample_1):
+    X, y = X_y_sample_1
 
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
@@ -46,8 +47,8 @@ def test_minrank():
     assert min_ranks[1] == 2
     assert min_ranks[2] == 1
 
-def test_avgrank():
-    X, y = X_y_sample_1()
+def test_avgrank(X_y_sample_1):
+    X, y = X_y_sample_1
 
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
@@ -56,8 +57,8 @@ def test_avgrank():
     assert avg_ranks[1] == 2.5
     assert avg_ranks[2] == 1
 
-def test_maxrank():
-    X, y = X_y_sample_1()
+def test_maxrank(X_y_sample_1):
+    X, y = X_y_sample_1
 
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
@@ -66,8 +67,8 @@ def test_maxrank():
     assert max_ranks[1] == 3
     assert max_ranks[2] == 1
 
-def test_denserank():
-    X, y = X_y_sample_1()
+def test_denserank(X_y_sample_1):
+    X, y = X_y_sample_1
 
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
@@ -76,8 +77,8 @@ def test_denserank():
     assert dense_ranks[1] == 2
     assert dense_ranks[2] == 1
 
-def test_ordinalrank():
-    X, y = X_y_sample_1()
+def test_ordinalrank(X_y_sample_1):
+    X, y = X_y_sample_1
 
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
@@ -89,8 +90,8 @@ def test_ordinalrank():
 """
 Test `to_frame`
 """
-def test_to_frame_without_elements():
-    X, y = X_y_sample_1()
+def test_to_frame_without_elements(X_y_sample_1):
+    X, y = X_y_sample_1
 
     ochiai = SBFL(formula='Ochiai')
     ochiai.fit(X, y)
@@ -103,8 +104,8 @@ def test_to_frame_without_elements():
         assert df.index[i] == i
         assert df.values[i] == scores[i]
 
-def test_to_frame_with_tuple_elements():
-    X, y = X_y_sample_1()
+def test_to_frame_with_tuple_elements(X_y_sample_1):
+    X, y = X_y_sample_1
     elements = [
         ('file1.py', 'method1'),
         ('file2.py', 'method2'),
@@ -122,8 +123,8 @@ def test_to_frame_with_tuple_elements():
         assert df.index[i] == elements[i]
         assert df.values[i] == scores[i]
 
-def test_to_frame_with_tuple_elements_and_names():
-    X, y = X_y_sample_1()
+def test_to_frame_with_tuple_elements_and_names(X_y_sample_1):
+    X, y = X_y_sample_1
     names = ['file', 'method']
     elements = [
         ('file1.py', 'method1'),
@@ -144,8 +145,8 @@ def test_to_frame_with_tuple_elements_and_names():
         assert df.index[i] == elements[i]
         assert df.values[i] == scores[i]
 
-def test_to_frame_shape_error():
-    X, y = X_y_sample_1()
+def test_to_frame_shape_error(X_y_sample_1):
+    X, y = X_y_sample_1
     elements = [
         ('file1.py', 'method1'),
         ('file2.py', 'method2'),
