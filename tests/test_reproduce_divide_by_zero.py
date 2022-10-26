@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from sbfl.base import SBFL
 
@@ -11,9 +12,9 @@ def test_reproduce_inf_in_ochiai2():
     ], dtype=bool)
     y = np.array([1,1,0], dtype=bool)
 
-    sbfl = SBFL(formula='Ochiai2')
-
-    scores = sbfl.fit_predict(X, y)
+    with pytest.deprecated_call():
+        sbfl = SBFL(formula='Ochiai2')
+        scores = sbfl.fit_predict(X, y)
 
     assert not np.isinf(scores[0])
     assert not np.isinf(scores[1])

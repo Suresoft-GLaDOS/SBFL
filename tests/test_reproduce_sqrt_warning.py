@@ -24,6 +24,7 @@ def test_reproduce_sqrt_warning_in_ochiai2(get_X_y, capsys):
     # halt when np.seterr(invalid='raise')
     # np.seterr(invalid='raise')
     X, y = get_X_y(RESOURCES_PATH / 'input.json')
-    sbfl = SBFL(formula='Ochiai2')
-    scores = sbfl.fit_predict(X, y)
+    with pytest.deprecated_call():
+        sbfl = SBFL(formula='Ochiai2')
+        scores = sbfl.fit_predict(X, y)
     assert not any(np.isnan(score) for score in scores)

@@ -107,7 +107,7 @@ def Zoltar(e_p, n_p, e_f, n_f):
     return scores
 
 def Ochiai2(e_p, n_p, e_f, n_f):
-    warnings.warn("[DEPRECATION WARNING] Ochiai2 is deprecated and will be removed in the futher version. Please use other formulas.")
+    warnings.warn("Ochiai2 is deprecated and will be removed in the futher version. Please use other formulas.", DeprecationWarning)
     divisor = np.sqrt((e_f + e_p) * (n_f + n_p) * (e_f + n_p) * (n_f + e_p))
     return np.divide(e_f * n_p, divisor, where=divisor!=0)
 

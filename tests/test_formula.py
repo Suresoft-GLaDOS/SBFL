@@ -275,8 +275,9 @@ def test_zoltar():
     
 def test_ochiai2():
     X, y = X_y_sample_1()
-    formula = SBFL(formula="Ochiai2")
-    formula.fit(X, y)
+    with pytest.deprecated_call():
+        formula = SBFL(formula="Ochiai2")
+        formula.fit(X, y)
     scores = formula.scores_
     assert scores[0] == 0
     assert scores[1] == 0
