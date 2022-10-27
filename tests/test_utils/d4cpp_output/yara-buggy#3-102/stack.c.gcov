@@ -1,0 +1,150 @@
+        -:    0:Source:stack.c
+        -:    0:Graph:/home/workspace/libyara/stack.gcno
+        -:    0:Data:/home/workspace/libyara/stack.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2018. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:
+        -:   31:#include <yara/integers.h>
+        -:   32:#include <yara/stack.h>
+        -:   33:#include <yara/mem.h>
+        -:   34:#include <yara/error.h>
+        -:   35:
+        -:   36:
+        -:   37://
+        -:   38:// yr_stack_create
+        -:   39://
+        -:   40:// Creates a stack for items of the size specified by item_size. All items
+        -:   41:// in the stack must have the same size. The stack will have an initial
+        -:   42:// capacity as specified by initial_capacity and will grow as required when
+        -:   43:// more objects are pushed.
+        -:   44://
+        -:   45:
+        2:   46:int yr_stack_create(
+        -:   47:    int initial_capacity,
+        -:   48:    int item_size,
+        -:   49:    YR_STACK** stack)
+        -:   50:{
+        2:   51:  *stack = (YR_STACK*) yr_malloc(sizeof(YR_STACK));
+        -:   52:
+        2:   53:  if (*stack == NULL)
+    #####:   54:    return ERROR_INSUFFICIENT_MEMORY;
+        -:   55:
+        2:   56:  (*stack)->items = yr_malloc(initial_capacity * item_size);
+        -:   57:
+        2:   58:  if ((*stack)->items == NULL)
+        -:   59:  {
+    #####:   60:    yr_free(*stack);
+    #####:   61:    *stack = NULL;
+    #####:   62:    return ERROR_INSUFFICIENT_MEMORY;
+        -:   63:  }
+        -:   64:
+        2:   65:  (*stack)->capacity = initial_capacity;
+        2:   66:  (*stack)->item_size = item_size;
+        2:   67:  (*stack)->top = 0;
+        -:   68:
+        2:   69:  return ERROR_SUCCESS;
+        -:   70:}
+        -:   71:
+        -:   72://
+        -:   73:// yr_stack_destroy
+        -:   74://
+        -:   75:// Destroys a stack and deallocates all its resources.
+        -:   76://
+        -:   77:
+        2:   78:void yr_stack_destroy(
+        -:   79:    YR_STACK* stack)
+        -:   80:{
+        2:   81:  yr_free(stack->items);
+        2:   82:  yr_free(stack);
+        2:   83:}
+        -:   84:
+        -:   85:
+        -:   86://
+        -:   87:// yr_stack_push
+        -:   88://
+        -:   89:// Pushes an item into the stack. If the stack has reached its capacity the
+        -:   90:// funtion tries to double the capacity. This operation can fail with
+        -:   91:// ERROR_INSUFFICIENT_MEMORY.
+        -:   92://
+        -:   93:
+        9:   94:int yr_stack_push(
+        -:   95:    YR_STACK* stack,
+        -:   96:    void* item)
+        -:   97:{
+        9:   98:  if (stack->top == stack->capacity)
+        -:   99:  {
+    #####:  100:    void* items = yr_realloc(
+    #####:  101:        stack->items, 2 * stack->capacity * stack->item_size);
+        -:  102:
+    #####:  103:    if (items == NULL)
+    #####:  104:      return ERROR_INSUFFICIENT_MEMORY;
+        -:  105:
+    #####:  106:    stack->items = items;
+    #####:  107:    stack->capacity *= 2;
+        -:  108:  }
+        -:  109:
+       18:  110:  memcpy(
+        9:  111:      (uint8_t*) stack->items + stack->top * stack->item_size,
+        -:  112:      item,
+        9:  113:      stack->item_size);
+        -:  114:
+        9:  115:  stack->top++;
+        -:  116:
+        9:  117:  return ERROR_SUCCESS;
+        -:  118:}
+        -:  119:
+        -:  120:
+        -:  121://
+        -:  122:// yr_stack_pop
+        -:  123://
+        -:  124:// Pops an item from the stack. The caller must pass pointer to a buffer
+        -:  125:// where the function will copy the item. The buffer must have enough space
+        -:  126:// to hold the item. Returns 1 if an item could be poped and 0 if the stack
+        -:  127:// was already empty.
+        -:  128://
+        -:  129:
+       10:  130:int yr_stack_pop(
+        -:  131:    YR_STACK* stack,
+        -:  132:    void* item)
+        -:  133:{
+       10:  134:  if (stack->top == 0)  // Return 0 if stack is empty.
+        1:  135:    return 0;
+        -:  136:
+        9:  137:  stack->top--;
+        -:  138:
+       18:  139:  memcpy(
+        -:  140:      item,
+        9:  141:      (uint8_t*) stack->items + stack->top * stack->item_size,
+        9:  142:      stack->item_size);
+        -:  143:
+        9:  144:  return 1;
+        -:  145:}

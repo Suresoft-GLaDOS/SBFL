@@ -1,0 +1,225 @@
+        -:    0:Source:modules/tests.c
+        -:    0:Graph:/home/workspace/libyara/modules/tests.gcno
+        -:    0:Data:/home/workspace/libyara/modules/tests.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2014. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <yara/modules.h>
+        -:   31:
+        -:   32:#define MODULE_NAME tests
+        -:   33:
+        -:   34:
+    #####:   35:define_function(fsum_2)
+        -:   36:{
+    #####:   37:  double a = float_argument(1);
+    #####:   38:  double b = float_argument(2);
+        -:   39:
+    #####:   40:  return_float(a + b);
+        -:   41:}
+        -:   42:
+    #####:   43:define_function(fsum_3)
+        -:   44:{
+    #####:   45:  double a = float_argument(1);
+    #####:   46:  double b = float_argument(2);
+    #####:   47:  double c = float_argument(3);
+        -:   48:
+    #####:   49:  return_float(a + b + c);
+        -:   50:}
+        -:   51:
+    #####:   52:define_function(isum_2)
+        -:   53:{
+    #####:   54:  int64_t a = integer_argument(1);
+    #####:   55:  int64_t b = integer_argument(2);
+        -:   56:
+    #####:   57:  return_integer(a + b);
+        -:   58:}
+        -:   59:
+        -:   60:
+    #####:   61:define_function(isum_3)
+        -:   62:{
+    #####:   63:  int64_t a = integer_argument(1);
+    #####:   64:  int64_t b = integer_argument(2);
+    #####:   65:  int64_t c = integer_argument(3);
+        -:   66:
+    #####:   67:  return_integer(a + b + c);
+        -:   68:}
+        -:   69:
+        -:   70:
+    #####:   71:define_function(length)
+        -:   72:{
+    #####:   73:  char* s = string_argument(1);
+        -:   74:
+    #####:   75:  return_integer(strlen(s));
+        -:   76:}
+        -:   77:
+        -:   78:
+    #####:   79:define_function(empty)
+        -:   80:{
+    #####:   81:  return_string("");
+        -:   82:}
+        -:   83:
+        -:   84:
+    #####:   85:define_function(match)
+        -:   86:{
+    #####:   87:  return_integer(
+        -:   88:      yr_re_match(
+        -:   89:          scan_context(),
+        -:   90:          regexp_argument(1),
+        -:   91:          string_argument(2)));
+        -:   92:}
+        -:   93:
+        -:   94:
+    #####:   95:define_function(foobar)
+        -:   96:{
+    #####:   97:  int64_t arg = integer_argument(1);
+        -:   98:
+    #####:   99:  switch (arg)
+        -:  100:  {
+    #####:  101:    case 1:
+    #####:  102:      return_string("foo");
+        -:  103:      break;
+    #####:  104:    case 2:
+    #####:  105:      return_string("bar");
+        -:  106:      break;
+        -:  107:  }
+        -:  108:
+    #####:  109:  return_string("oops")
+        -:  110:}
+        -:  111:
+    #####:  112:begin_declarations;
+        -:  113:
+    #####:  114:  begin_struct("constants");
+    #####:  115:    declare_integer("one");
+    #####:  116:    declare_integer("two");
+    #####:  117:    declare_string("foo");
+    #####:  118:    declare_string("empty");
+    #####:  119:  end_struct("constants");
+        -:  120:
+    #####:  121:  begin_struct("undefined");
+    #####:  122:    declare_integer("i");
+    #####:  123:    declare_float("f");
+    #####:  124:  end_struct("undefined");
+        -:  125:
+    #####:  126:  declare_string("module_data")
+        -:  127:
+    #####:  128:  declare_integer_array("integer_array");
+    #####:  129:  declare_string_array("string_array");
+        -:  130:
+    #####:  131:  declare_integer_dictionary("integer_dict");
+    #####:  132:  declare_string_dictionary("string_dict");
+        -:  133:
+    #####:  134:  begin_struct_array("struct_array");
+    #####:  135:    declare_integer("i");
+    #####:  136:    declare_string("s");
+    #####:  137:  end_struct_array("struct_array");
+        -:  138:
+    #####:  139:  begin_struct_dictionary("struct_dict");
+    #####:  140:    declare_integer("i");
+    #####:  141:    declare_string("s");
+    #####:  142:  end_struct_dictionary("struct_dict");
+        -:  143:
+    #####:  144:  declare_function("match", "rs", "i", match);
+    #####:  145:  declare_function("isum", "ii", "i", isum_2);
+    #####:  146:  declare_function("isum", "iii", "i", isum_3);
+    #####:  147:  declare_function("fsum", "ff", "f", fsum_2);
+    #####:  148:  declare_function("fsum", "fff", "f", fsum_3);
+    #####:  149:  declare_function("length", "s", "i", length);
+    #####:  150:  declare_function("empty", "", "s", empty);
+    #####:  151:  declare_function("foobar", "i", "s", foobar);
+        -:  152:
+    #####:  153:end_declarations;
+        -:  154:
+        -:  155:
+        6:  156:int module_initialize(
+        -:  157:    YR_MODULE* module)
+        -:  158:{
+        6:  159:  return ERROR_SUCCESS;
+        -:  160:}
+        -:  161:
+        -:  162:
+        4:  163:int module_finalize(
+        -:  164:    YR_MODULE* module)
+        -:  165:{
+        4:  166:  return ERROR_SUCCESS;
+        -:  167:}
+        -:  168:
+    #####:  169:int module_load(
+        -:  170:    YR_SCAN_CONTEXT* context,
+        -:  171:    YR_OBJECT* module_object,
+        -:  172:    void* module_data,
+        -:  173:    size_t module_data_size)
+        -:  174:{
+    #####:  175:  set_integer(1, module_object, "constants.one");
+    #####:  176:  set_integer(2, module_object, "constants.two");
+    #####:  177:  set_string("foo", module_object, "constants.foo");
+    #####:  178:  set_string("", module_object, "constants.empty");
+        -:  179:
+    #####:  180:  set_integer(1, module_object, "struct_array[1].i");
+        -:  181:
+    #####:  182:  set_integer(0, module_object, "integer_array[%i]", 0);
+    #####:  183:  set_integer(1, module_object, "integer_array[%i]", 1);
+    #####:  184:  set_integer(2, module_object, "integer_array[%i]", 2);
+    #####:  185:  set_integer(256, module_object, "integer_array[%i]", 256);
+        -:  186:
+    #####:  187:  set_string("foo", module_object, "string_array[%i]", 0);
+    #####:  188:  set_string("bar", module_object, "string_array[%i]", 1);
+    #####:  189:  set_string("baz", module_object, "string_array[%i]", 2);
+        -:  190:
+    #####:  191:  set_sized_string("foo\0bar", 7, module_object, "string_array[%i]", 3);
+        -:  192:
+    #####:  193:  set_string("foo", module_object, "string_dict[%s]", "foo");
+    #####:  194:  set_string("bar", module_object, "string_dict[\"bar\"]");
+        -:  195:
+    #####:  196:  set_string("foo", module_object, "struct_dict[%s].s", "foo");
+    #####:  197:  set_integer(1, module_object, "struct_dict[%s].i", "foo");
+        -:  198:
+    #####:  199:  if (module_data_size > 0 && module_data != NULL) {
+    #####:  200:    set_sized_string(
+        -:  201:        (const char*) module_data,
+        -:  202:        module_data_size,
+        -:  203:        module_object,
+        -:  204:        "module_data");
+        -:  205:  }
+        -:  206:
+    #####:  207:  return ERROR_SUCCESS;
+        -:  208:}
+        -:  209:
+        -:  210:
+    #####:  211:int module_unload(
+        -:  212:    YR_OBJECT* module_object)
+        -:  213:{
+        -:  214:  // Fail if module_unload is called twice with the same module_object
+    #####:  215:  if (module_object->data == (void*) 0xFABADA)
+    #####:  216:    assert(false);
+        -:  217:
+    #####:  218:  module_object->data = (void*) 0xFABADA;
+    #####:  219:  return ERROR_SUCCESS;
+        -:  220:}

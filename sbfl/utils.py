@@ -94,7 +94,6 @@ def read_gcov(path_to_file, only_coverable=True, encoding='utf-8') -> dict:
                     if hits.endswith("*"):
                         hits = hits[:-1]
                     coverage[dict_key] = int(hits)
-
     except Exception as e:
         raise Exception(f"Error while reading {path_to_file}: {e}")
 
@@ -102,11 +101,11 @@ def read_gcov(path_to_file, only_coverable=True, encoding='utf-8') -> dict:
         raise Exception(f"Unable to read soure file from {path_to_file}")
 
     return source, graph, coverage
-        
+
 def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
     only_covered=False, verbose=False, **kwargs):
     """ Converts gcov files to a coverage matrix
-    
+
     If verbose is set to True, a progress bar will be printed.
 
     Parameters
@@ -164,7 +163,7 @@ def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
     df = pd.DataFrame(
         data, index=pd.MultiIndex.from_tuples(index,
                 names=['file', 'function', 'line']), columns=columns)
-    
+
     if only_covered:
         covered = df.values.sum(axis=1) > 0
         return df.iloc[covered]
@@ -182,10 +181,10 @@ def get_sbfl_scores_from_frame(cov_df, failing_tests, sbfl=None):
         index: source, line number (two-level)
         column: test case name
     failing_tests: Iterable (set or list)
-        a list/set of failing test names 
+        a list/set of failing test names
     sbfl: SBFL, optional
         SBFL-type instance
-    
+
     Returns
     -------
     pd.Dataframe
@@ -224,7 +223,17 @@ def read_dfcpp_coverage(d4cpp_output_dir, **kwargs):
 
 def read_dfcpp_test_results(d4cpp_output_dir):
     """
-    Returns test results
+    Read d4cpp test results
+
+    Parameters
+    ----------
+    d4cpp_output_dir : Path or st
+        path to the d4cpp output directory containing the coverage data
+
+    Returns
+    -------
+    dict
+        test results (key: test case name, value: "passed" or "failed")
     """
     test_results = {}
     for dir_name in os.listdir(d4cpp_output_dir):

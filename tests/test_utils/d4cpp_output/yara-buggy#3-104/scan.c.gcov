@@ -1,0 +1,888 @@
+        -:    0:Source:scan.c
+        -:    0:Graph:/home/workspace/libyara/scan.gcno
+        -:    0:Data:/home/workspace/libyara/scan.gcda
+        -:    0:Runs:7
+        -:    0:Programs:7
+        -:    1:/*
+        -:    2:Copyright (c) 2014. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <assert.h>
+        -:   31:#include <stdlib.h>
+        -:   32:#include <ctype.h>
+        -:   33:
+        -:   34:#include <yara/globals.h>
+        -:   35:#include <yara/limits.h>
+        -:   36:#include <yara/utils.h>
+        -:   37:#include <yara/re.h>
+        -:   38:#include <yara/types.h>
+        -:   39:#include <yara/error.h>
+        -:   40:#include <yara/libyara.h>
+        -:   41:#include <yara/scan.h>
+        -:   42:#include <yara/stopwatch.h>
+        -:   43:
+        -:   44:
+        -:   45:
+        -:   46:typedef struct _CALLBACK_ARGS
+        -:   47:{
+        -:   48:  YR_STRING* string;
+        -:   49:  YR_SCAN_CONTEXT* context;
+        -:   50:
+        -:   51:  const uint8_t* data;
+        -:   52:  size_t data_size;
+        -:   53:  uint64_t data_base;
+        -:   54:
+        -:   55:  int forward_matches;
+        -:   56:  int full_word;
+        -:   57:
+        -:   58:} CALLBACK_ARGS;
+        -:   59:
+        -:   60:
+    #####:   61:static int _yr_scan_xor_compare(
+        -:   62:    const uint8_t* data,
+        -:   63:    size_t data_size,
+        -:   64:    uint8_t* string,
+        -:   65:    size_t string_length)
+        -:   66:{
+    #####:   67:  const uint8_t* s1 = data;
+    #####:   68:  const uint8_t* s2 = string;
+    #####:   69:  uint8_t k = 0;
+        -:   70:
+    #####:   71:  size_t i = 0;
+        -:   72:
+    #####:   73:  if (data_size < string_length)
+    #####:   74:    return 0;
+        -:   75:
+        -:   76:  // Calculate the xor key to compare with. *s1 is the start of the string we
+        -:   77:  // matched on and *s2 is the "plaintext" string, so *s1 ^ *s2 is the key to
+        -:   78:  // every *s2 as we compare.
+    #####:   79:  k = *s1 ^ *s2;
+        -:   80:
+    #####:   81:  while (i < string_length && *s1++ == ((*s2++) ^ k))
+    #####:   82:    i++;
+        -:   83:
+    #####:   84:  return (int) ((i == string_length) ? i : 0);
+        -:   85:}
+        -:   86:
+    #####:   87:static int _yr_scan_xor_wcompare(
+        -:   88:    const uint8_t* data,
+        -:   89:    size_t data_size,
+        -:   90:    uint8_t* string,
+        -:   91:    size_t string_length)
+        -:   92:{
+    #####:   93:  const uint8_t* s1 = data;
+    #####:   94:  const uint8_t* s2 = string;
+    #####:   95:  uint8_t k = 0;
+        -:   96:
+    #####:   97:  size_t i = 0;
+        -:   98:
+    #####:   99:  if (data_size < string_length * 2)
+    #####:  100:    return 0;
+        -:  101:
+        -:  102:  // Calculate the xor key to compare with. *s1 is the start of the string we
+        -:  103:  // matched on and *s2 is the "plaintext" string, so *s1 ^ *s2 is the key to
+        -:  104:  // every *s2 as we compare.
+    #####:  105:  k = *s1 ^ *s2;
+        -:  106:
+    #####:  107:  while (i < string_length && *s1 == ((*s2) ^ k) && ((*(s1 + 1)) ^ k) == 0x00)
+        -:  108:  {
+    #####:  109:    s1+=2;
+    #####:  110:    s2++;
+    #####:  111:    i++;
+        -:  112:  }
+        -:  113:
+    #####:  114:  return (int) ((i == string_length) ? i * 2 : 0);
+        -:  115:}
+        -:  116:
+        -:  117:
+    #####:  118:static int _yr_scan_compare(
+        -:  119:    const uint8_t* data,
+        -:  120:    size_t data_size,
+        -:  121:    uint8_t* string,
+        -:  122:    size_t string_length)
+        -:  123:{
+    #####:  124:  const uint8_t* s1 = data;
+    #####:  125:  const uint8_t* s2 = string;
+        -:  126:
+    #####:  127:  size_t i = 0;
+        -:  128:
+    #####:  129:  if (data_size < string_length)
+    #####:  130:    return 0;
+        -:  131:
+    #####:  132:  while (i < string_length && *s1++ == *s2++)
+    #####:  133:    i++;
+        -:  134:
+    #####:  135:  return (int) ((i == string_length) ? i : 0);
+        -:  136:}
+        -:  137:
+        -:  138:
+    #####:  139:static int _yr_scan_icompare(
+        -:  140:    const uint8_t* data,
+        -:  141:    size_t data_size,
+        -:  142:    uint8_t* string,
+        -:  143:    size_t string_length)
+        -:  144:{
+    #####:  145:  const uint8_t* s1 = data;
+    #####:  146:  const uint8_t* s2 = string;
+        -:  147:
+    #####:  148:  size_t i = 0;
+        -:  149:
+    #####:  150:  if (data_size < string_length)
+    #####:  151:    return 0;
+        -:  152:
+    #####:  153:  while (i < string_length && yr_lowercase[*s1++] == yr_lowercase[*s2++])
+    #####:  154:    i++;
+        -:  155:
+    #####:  156:  return (int) ((i == string_length) ? i : 0);
+        -:  157:}
+        -:  158:
+        -:  159:
+    #####:  160:static int _yr_scan_wcompare(
+        -:  161:    const uint8_t* data,
+        -:  162:    size_t data_size,
+        -:  163:    uint8_t* string,
+        -:  164:    size_t string_length)
+        -:  165:{
+    #####:  166:  const uint8_t* s1 = data;
+    #####:  167:  const uint8_t* s2 = string;
+        -:  168:
+    #####:  169:  size_t i = 0;
+        -:  170:
+    #####:  171:  if (data_size < string_length * 2)
+    #####:  172:    return 0;
+        -:  173:
+    #####:  174:  while (i < string_length && *s1 == *s2 && *(s1 + 1) == 0x00)
+        -:  175:  {
+    #####:  176:    s1+=2;
+    #####:  177:    s2++;
+    #####:  178:    i++;
+        -:  179:  }
+        -:  180:
+    #####:  181:  return (int) ((i == string_length) ? i * 2 : 0);
+        -:  182:}
+        -:  183:
+        -:  184:
+    #####:  185:static int _yr_scan_wicompare(
+        -:  186:    const uint8_t* data,
+        -:  187:    size_t data_size,
+        -:  188:    uint8_t* string,
+        -:  189:    size_t string_length)
+        -:  190:{
+    #####:  191:  const uint8_t* s1 = data;
+    #####:  192:  const uint8_t* s2 = string;
+        -:  193:
+    #####:  194:  size_t i = 0;
+        -:  195:
+    #####:  196:  if (data_size < string_length * 2)
+    #####:  197:    return 0;
+        -:  198:
+    #####:  199:  while (i < string_length &&
+    #####:  200:         yr_lowercase[*s1] == yr_lowercase[*s2] &&
+    #####:  201:         *(s1 + 1) == 0x00)
+        -:  202:  {
+    #####:  203:    s1+=2;
+    #####:  204:    s2++;
+    #####:  205:    i++;
+        -:  206:  }
+        -:  207:
+    #####:  208:  return (int) ((i == string_length) ? i * 2 : 0);
+        -:  209:}
+        -:  210:
+        -:  211:
+    #####:  212:static void _yr_scan_update_match_chain_length(
+        -:  213:    int tidx,
+        -:  214:    YR_STRING* string,
+        -:  215:    YR_MATCH* match_to_update,
+        -:  216:    int chain_length)
+        -:  217:{
+        -:  218:  YR_MATCH* match;
+        -:  219:
+    #####:  220:  if (match_to_update->chain_length == chain_length)
+    #####:  221:    return;
+        -:  222:
+    #####:  223:  match_to_update->chain_length = chain_length;
+        -:  224:
+    #####:  225:  if (string->chained_to == NULL)
+    #####:  226:    return;
+        -:  227:
+    #####:  228:  match = string->chained_to->unconfirmed_matches[tidx].head;
+        -:  229:
+    #####:  230:  while (match != NULL)
+        -:  231:  {
+    #####:  232:    int64_t ending_offset = match->offset + match->match_length;
+        -:  233:
+    #####:  234:    if (ending_offset + string->chain_gap_max >= match_to_update->offset &&
+    #####:  235:        ending_offset + string->chain_gap_min <= match_to_update->offset)
+        -:  236:    {
+    #####:  237:      _yr_scan_update_match_chain_length(
+        -:  238:          tidx, string->chained_to, match, chain_length + 1);
+        -:  239:    }
+        -:  240:
+    #####:  241:    match = match->next;
+        -:  242:  }
+        -:  243:}
+        -:  244:
+        -:  245:
+    #####:  246:static int _yr_scan_add_match_to_list(
+        -:  247:    YR_MATCH* match,
+        -:  248:    YR_MATCHES* matches_list,
+        -:  249:    int replace_if_exists)
+        -:  250:{
+    #####:  251:  YR_MATCH* insertion_point = matches_list->tail;
+        -:  252:
+    #####:  253:  if (matches_list->count == YR_MAX_STRING_MATCHES)
+    #####:  254:    return ERROR_TOO_MANY_MATCHES;
+        -:  255:
+    #####:  256:  while (insertion_point != NULL)
+        -:  257:  {
+    #####:  258:    if (match->offset == insertion_point->offset)
+        -:  259:    {
+    #####:  260:      if (replace_if_exists)
+        -:  261:      {
+    #####:  262:        insertion_point->match_length = match->match_length;
+    #####:  263:        insertion_point->data_length = match->data_length;
+    #####:  264:        insertion_point->data = match->data;
+        -:  265:      }
+        -:  266:
+    #####:  267:      return ERROR_SUCCESS;
+        -:  268:    }
+        -:  269:
+    #####:  270:    if (match->offset > insertion_point->offset)
+    #####:  271:      break;
+        -:  272:
+    #####:  273:    insertion_point = insertion_point->prev;
+        -:  274:  }
+        -:  275:
+    #####:  276:  match->prev = insertion_point;
+        -:  277:
+    #####:  278:  if (insertion_point != NULL)
+        -:  279:  {
+    #####:  280:    match->next = insertion_point->next;
+    #####:  281:    insertion_point->next = match;
+        -:  282:  }
+        -:  283:  else
+        -:  284:  {
+    #####:  285:    match->next = matches_list->head;
+    #####:  286:    matches_list->head = match;
+        -:  287:  }
+        -:  288:
+    #####:  289:  matches_list->count++;
+        -:  290:
+    #####:  291:  if (match->next != NULL)
+    #####:  292:    match->next->prev = match;
+        -:  293:  else
+    #####:  294:    matches_list->tail = match;
+        -:  295:
+    #####:  296:  return ERROR_SUCCESS;
+        -:  297:}
+        -:  298:
+        -:  299:
+    #####:  300:static void _yr_scan_remove_match_from_list(
+        -:  301:    YR_MATCH* match,
+        -:  302:    YR_MATCHES* matches_list)
+        -:  303:{
+    #####:  304:  if (match->prev != NULL)
+    #####:  305:    match->prev->next = match->next;
+        -:  306:
+    #####:  307:  if (match->next != NULL)
+    #####:  308:    match->next->prev = match->prev;
+        -:  309:
+    #####:  310:  if (matches_list->head == match)
+    #####:  311:    matches_list->head = match->next;
+        -:  312:
+    #####:  313:  if (matches_list->tail == match)
+    #####:  314:    matches_list->tail = match->prev;
+        -:  315:
+    #####:  316:  matches_list->count--;
+    #####:  317:  match->next = NULL;
+    #####:  318:  match->prev = NULL;
+    #####:  319:}
+        -:  320:
+        -:  321:
+    #####:  322:static int _yr_scan_verify_chained_string_match(
+        -:  323:    YR_STRING* matching_string,
+        -:  324:    YR_SCAN_CONTEXT* context,
+        -:  325:    const uint8_t* match_data,
+        -:  326:    uint64_t match_base,
+        -:  327:    uint64_t match_offset,
+        -:  328:    int32_t match_length)
+        -:  329:{
+        -:  330:  YR_STRING* string;
+        -:  331:  YR_MATCH* match;
+        -:  332:  YR_MATCH* next_match;
+        -:  333:  YR_MATCH* new_match;
+        -:  334:
+        -:  335:  uint64_t lower_offset;
+        -:  336:  uint64_t ending_offset;
+        -:  337:  int32_t full_chain_length;
+        -:  338:
+    #####:  339:  int tidx = context->tidx;
+    #####:  340:  bool add_match = false;
+        -:  341:
+    #####:  342:  if (matching_string->chained_to == NULL)
+        -:  343:  {
+    #####:  344:    add_match = true;
+        -:  345:  }
+        -:  346:  else
+        -:  347:  {
+    #####:  348:    if (matching_string->unconfirmed_matches[tidx].head != NULL)
+    #####:  349:      lower_offset = matching_string->unconfirmed_matches[tidx].head->offset;
+        -:  350:    else
+    #####:  351:      lower_offset = match_offset;
+        -:  352:
+    #####:  353:    match = matching_string->chained_to->unconfirmed_matches[tidx].head;
+        -:  354:
+    #####:  355:    while (match != NULL)
+        -:  356:    {
+    #####:  357:      next_match = match->next;
+    #####:  358:      ending_offset = match->offset + match->match_length;
+        -:  359:
+    #####:  360:      if (ending_offset + matching_string->chain_gap_max < lower_offset)
+        -:  361:      {
+    #####:  362:        _yr_scan_remove_match_from_list(
+    #####:  363:            match, &matching_string->chained_to->unconfirmed_matches[tidx]);
+        -:  364:      }
+        -:  365:      else
+        -:  366:      {
+    #####:  367:        if (ending_offset + matching_string->chain_gap_max >= match_offset &&
+    #####:  368:            ending_offset + matching_string->chain_gap_min <= match_offset)
+        -:  369:        {
+    #####:  370:          add_match = true;
+    #####:  371:          break;
+        -:  372:        }
+        -:  373:      }
+        -:  374:
+    #####:  375:      match = next_match;
+        -:  376:    }
+        -:  377:  }
+        -:  378:
+    #####:  379:  if (add_match)
+        -:  380:  {
+        -:  381:    uint32_t max_match_data;
+        -:  382:
+    #####:  383:    FAIL_ON_ERROR(yr_get_configuration(
+        -:  384:        YR_CONFIG_MAX_MATCH_DATA,
+        -:  385:        &max_match_data))
+        -:  386:
+    #####:  387:    if (STRING_IS_CHAIN_TAIL(matching_string))
+        -:  388:    {
+        -:  389:      // Chain tails must be chained to some other string
+    #####:  390:      assert(matching_string->chained_to != NULL);
+        -:  391:
+    #####:  392:      match = matching_string->chained_to->unconfirmed_matches[tidx].head;
+        -:  393:
+    #####:  394:      while (match != NULL)
+        -:  395:      {
+    #####:  396:        ending_offset = match->offset + match->match_length;
+        -:  397:
+    #####:  398:        if (ending_offset + matching_string->chain_gap_max >= match_offset &&
+    #####:  399:            ending_offset + matching_string->chain_gap_min <= match_offset)
+        -:  400:        {
+    #####:  401:          _yr_scan_update_match_chain_length(
+    #####:  402:              tidx, matching_string->chained_to, match, 1);
+        -:  403:        }
+        -:  404:
+    #####:  405:        match = match->next;
+        -:  406:      }
+        -:  407:
+    #####:  408:      full_chain_length = 0;
+    #####:  409:      string = matching_string;
+        -:  410:
+    #####:  411:      while(string->chained_to != NULL)
+        -:  412:      {
+    #####:  413:        full_chain_length++;
+    #####:  414:        string = string->chained_to;
+        -:  415:      }
+        -:  416:
+        -:  417:      // "string" points now to the head of the strings chain
+        -:  418:
+    #####:  419:      match = string->unconfirmed_matches[tidx].head;
+        -:  420:
+    #####:  421:      while (match != NULL)
+        -:  422:      {
+    #####:  423:        next_match = match->next;
+        -:  424:
+    #####:  425:        if (match->chain_length == full_chain_length)
+        -:  426:        {
+    #####:  427:          _yr_scan_remove_match_from_list(
+        -:  428:              match, &string->unconfirmed_matches[tidx]);
+        -:  429:
+    #####:  430:          match->match_length = (int32_t) \
+    #####:  431:              (match_offset - match->offset + match_length);
+        -:  432:
+    #####:  433:          match->data_length = yr_min(match->match_length, max_match_data);
+        -:  434:
+    #####:  435:          FAIL_ON_ERROR(yr_arena_write_data(
+        -:  436:              context->matches_arena,
+        -:  437:              match_data - match_offset + match->offset,
+        -:  438:              match->data_length,
+        -:  439:              (void**) &match->data));
+        -:  440:
+    #####:  441:          FAIL_ON_ERROR(_yr_scan_add_match_to_list(
+        -:  442:              match, &string->matches[tidx], false));
+        -:  443:        }
+        -:  444:
+    #####:  445:        match = next_match;
+        -:  446:      }
+        -:  447:    }
+        -:  448:    else
+        -:  449:    {
+    #####:  450:      if (matching_string->matches[tidx].count == 0 &&
+    #####:  451:          matching_string->unconfirmed_matches[tidx].count == 0)
+        -:  452:      {
+        -:  453:        // If this is the first match for the string, put the string in the
+        -:  454:        // list of strings whose flags needs to be cleared after the scan.
+        -:  455:
+    #####:  456:        FAIL_ON_ERROR(yr_arena_write_data(
+        -:  457:            context->matching_strings_arena,
+        -:  458:            &matching_string,
+        -:  459:            sizeof(matching_string),
+        -:  460:            NULL));
+        -:  461:      }
+        -:  462:
+    #####:  463:      FAIL_ON_ERROR(yr_arena_allocate_memory(
+        -:  464:          context->matches_arena,
+        -:  465:          sizeof(YR_MATCH),
+        -:  466:          (void**) &new_match));
+        -:  467:
+    #####:  468:      new_match->data_length = yr_min(match_length, max_match_data);
+        -:  469:
+    #####:  470:      if (new_match->data_length > 0)
+        -:  471:      {
+    #####:  472:        FAIL_ON_ERROR(yr_arena_write_data(
+        -:  473:            context->matches_arena,
+        -:  474:            match_data,
+        -:  475:            new_match->data_length,
+        -:  476:            (void**) &new_match->data));
+        -:  477:      }
+        -:  478:      else
+        -:  479:      {
+    #####:  480:        new_match->data = NULL;
+        -:  481:      }
+        -:  482:
+    #####:  483:      new_match->base = match_base;
+    #####:  484:      new_match->offset = match_offset;
+    #####:  485:      new_match->match_length = match_length;
+    #####:  486:      new_match->chain_length = 0;
+    #####:  487:      new_match->prev = NULL;
+    #####:  488:      new_match->next = NULL;
+        -:  489:
+    #####:  490:      FAIL_ON_ERROR(_yr_scan_add_match_to_list(
+        -:  491:          new_match,
+        -:  492:          &matching_string->unconfirmed_matches[tidx],
+        -:  493:          false));
+        -:  494:    }
+        -:  495:  }
+        -:  496:
+    #####:  497:  return ERROR_SUCCESS;
+        -:  498:}
+        -:  499:
+        -:  500:
+    #####:  501:static int _yr_scan_match_callback(
+        -:  502:    const uint8_t* match_data,
+        -:  503:    int32_t match_length,
+        -:  504:    int flags,
+        -:  505:    void* args)
+        -:  506:{
+    #####:  507:  CALLBACK_ARGS* callback_args = (CALLBACK_ARGS*) args;
+        -:  508:
+    #####:  509:  YR_STRING* string = callback_args->string;
+        -:  510:  YR_MATCH* new_match;
+        -:  511:
+    #####:  512:  int result = ERROR_SUCCESS;
+    #####:  513:  int tidx = callback_args->context->tidx;
+        -:  514:
+    #####:  515:  size_t match_offset = match_data - callback_args->data;
+        -:  516:
+        -:  517:  // total match length is the sum of backward and forward matches.
+    #####:  518:  match_length += callback_args->forward_matches;
+        -:  519:
+        -:  520:  // make sure that match fits into the data.
+    #####:  521:  assert(match_offset + match_length <= callback_args->data_size);
+        -:  522:
+    #####:  523:  if (callback_args->full_word)
+        -:  524:  {
+    #####:  525:    if (flags & RE_FLAGS_WIDE)
+        -:  526:    {
+    #####:  527:      if (match_offset >= 2 &&
+    #####:  528:          *(match_data - 1) == 0 &&
+    #####:  529:          isalnum(*(match_data - 2)))
+    #####:  530:        return ERROR_SUCCESS;
+        -:  531:
+    #####:  532:      if (match_offset + match_length + 1 < callback_args->data_size &&
+    #####:  533:          *(match_data + match_length + 1) == 0 &&
+    #####:  534:          isalnum(*(match_data + match_length)))
+    #####:  535:        return ERROR_SUCCESS;
+        -:  536:    }
+        -:  537:    else
+        -:  538:    {
+    #####:  539:      if (match_offset >= 1 &&
+    #####:  540:          isalnum(*(match_data - 1)))
+    #####:  541:        return ERROR_SUCCESS;
+        -:  542:
+    #####:  543:      if (match_offset + match_length < callback_args->data_size &&
+    #####:  544:          isalnum(*(match_data + match_length)))
+    #####:  545:        return ERROR_SUCCESS;
+        -:  546:    }
+        -:  547:  }
+        -:  548:
+    #####:  549:  if (STRING_IS_CHAIN_PART(string))
+        -:  550:  {
+    #####:  551:    result = _yr_scan_verify_chained_string_match(
+        -:  552:        string,
+        -:  553:        callback_args->context,
+        -:  554:        match_data,
+        -:  555:        callback_args->data_base,
+        -:  556:        match_offset,
+        -:  557:        match_length);
+        -:  558:  }
+        -:  559:  else
+        -:  560:  {
+        -:  561:    uint32_t max_match_data;
+        -:  562:
+    #####:  563:    FAIL_ON_ERROR(yr_get_configuration(
+        -:  564:        YR_CONFIG_MAX_MATCH_DATA,
+        -:  565:        &max_match_data))
+        -:  566:
+    #####:  567:    if (string->matches[tidx].count == 0)
+        -:  568:    {
+        -:  569:      // If this is the first match for the string, put the string in the
+        -:  570:      // list of strings whose flags needs to be cleared after the scan.
+        -:  571:
+    #####:  572:      FAIL_ON_ERROR(yr_arena_write_data(
+        -:  573:          callback_args->context->matching_strings_arena,
+        -:  574:          &string,
+        -:  575:          sizeof(string),
+        -:  576:          NULL));
+        -:  577:    }
+        -:  578:
+    #####:  579:    FAIL_ON_ERROR(yr_arena_allocate_memory(
+        -:  580:        callback_args->context->matches_arena,
+        -:  581:        sizeof(YR_MATCH),
+        -:  582:        (void**) &new_match));
+        -:  583:
+    #####:  584:    new_match->data_length = yr_min(match_length, max_match_data);
+        -:  585:
+    #####:  586:    if (new_match->data_length > 0)
+        -:  587:    {
+    #####:  588:      FAIL_ON_ERROR(yr_arena_write_data(
+        -:  589:          callback_args->context->matches_arena,
+        -:  590:          match_data,
+        -:  591:          new_match->data_length,
+        -:  592:          (void**) &new_match->data));
+        -:  593:    }
+        -:  594:    else
+        -:  595:    {
+    #####:  596:      new_match->data = NULL;
+        -:  597:    }
+        -:  598:
+    #####:  599:    if (result == ERROR_SUCCESS)
+        -:  600:    {
+    #####:  601:      new_match->base = callback_args->data_base;
+    #####:  602:      new_match->offset = match_offset;
+    #####:  603:      new_match->match_length = match_length;
+    #####:  604:      new_match->prev = NULL;
+    #####:  605:      new_match->next = NULL;
+        -:  606:
+    #####:  607:      FAIL_ON_ERROR(_yr_scan_add_match_to_list(
+        -:  608:          new_match,
+        -:  609:          &string->matches[tidx],
+        -:  610:          STRING_IS_GREEDY_REGEXP(string)));
+        -:  611:    }
+        -:  612:  }
+        -:  613:
+    #####:  614:  return result;
+        -:  615:}
+        -:  616:
+        -:  617:
+        -:  618:typedef int (*RE_EXEC_FUNC)(
+        -:  619:    YR_SCAN_CONTEXT* context,
+        -:  620:    const uint8_t* code,
+        -:  621:    const uint8_t* input,
+        -:  622:    size_t input_forwards_size,
+        -:  623:    size_t input_backwards_size,
+        -:  624:    int flags,
+        -:  625:    RE_MATCH_CALLBACK_FUNC callback,
+        -:  626:    void* callback_args,
+        -:  627:    int* matches);
+        -:  628:
+        -:  629:
+    #####:  630:static int _yr_scan_verify_re_match(
+        -:  631:    YR_SCAN_CONTEXT* context,
+        -:  632:    YR_AC_MATCH* ac_match,
+        -:  633:    const uint8_t* data,
+        -:  634:    size_t data_size,
+        -:  635:    uint64_t data_base,
+        -:  636:    size_t offset)
+        -:  637:{
+        -:  638:  CALLBACK_ARGS callback_args;
+        -:  639:  RE_EXEC_FUNC exec;
+        -:  640:
+    #####:  641:  int forward_matches = -1;
+    #####:  642:  int backward_matches = -1;
+    #####:  643:  int flags = 0;
+        -:  644:
+    #####:  645:  if (STRING_IS_GREEDY_REGEXP(ac_match->string))
+    #####:  646:    flags |= RE_FLAGS_GREEDY;
+        -:  647:
+    #####:  648:  if (STRING_IS_NO_CASE(ac_match->string))
+    #####:  649:    flags |= RE_FLAGS_NO_CASE;
+        -:  650:
+    #####:  651:  if (STRING_IS_DOT_ALL(ac_match->string))
+    #####:  652:    flags |= RE_FLAGS_DOT_ALL;
+        -:  653:
+    #####:  654:  if (STRING_IS_FAST_REGEXP(ac_match->string))
+    #####:  655:    exec = yr_re_fast_exec;
+        -:  656:  else
+    #####:  657:    exec = yr_re_exec;
+        -:  658:
+    #####:  659:  if (STRING_IS_ASCII(ac_match->string))
+        -:  660:  {
+    #####:  661:    FAIL_ON_ERROR(exec(
+        -:  662:        context,
+        -:  663:        ac_match->forward_code,
+        -:  664:        data + offset,
+        -:  665:        data_size - offset,
+        -:  666:        offset,
+        -:  667:        flags,
+        -:  668:        NULL,
+        -:  669:        NULL,
+        -:  670:        &forward_matches));
+        -:  671:  }
+        -:  672:
+    #####:  673:  if (STRING_IS_WIDE(ac_match->string) && forward_matches == -1)
+        -:  674:  {
+    #####:  675:    flags |= RE_FLAGS_WIDE;
+    #####:  676:    FAIL_ON_ERROR(exec(
+        -:  677:        context,
+        -:  678:        ac_match->forward_code,
+        -:  679:        data + offset,
+        -:  680:        data_size - offset,
+        -:  681:        offset,
+        -:  682:        flags,
+        -:  683:        NULL,
+        -:  684:        NULL,
+        -:  685:        &forward_matches));
+        -:  686:  }
+        -:  687:
+    #####:  688:  if (forward_matches == -1)
+    #####:  689:    return ERROR_SUCCESS;
+        -:  690:
+    #####:  691:  if (forward_matches == 0 && ac_match->backward_code == NULL)
+    #####:  692:    return ERROR_SUCCESS;
+        -:  693:
+    #####:  694:  callback_args.string = ac_match->string;
+    #####:  695:  callback_args.context = context;
+    #####:  696:  callback_args.data = data;
+    #####:  697:  callback_args.data_size = data_size;
+    #####:  698:  callback_args.data_base = data_base;
+    #####:  699:  callback_args.forward_matches = forward_matches;
+    #####:  700:  callback_args.full_word = STRING_IS_FULL_WORD(ac_match->string);
+        -:  701:
+    #####:  702:  if (ac_match->backward_code != NULL)
+        -:  703:  {
+    #####:  704:    FAIL_ON_ERROR(exec(
+        -:  705:        context,
+        -:  706:        ac_match->backward_code,
+        -:  707:        data + offset,
+        -:  708:        data_size - offset,
+        -:  709:        offset,
+        -:  710:        flags | RE_FLAGS_BACKWARDS | RE_FLAGS_EXHAUSTIVE,
+        -:  711:        _yr_scan_match_callback,
+        -:  712:        (void*) &callback_args,
+        -:  713:        &backward_matches));
+        -:  714:  }
+        -:  715:  else
+        -:  716:  {
+    #####:  717:    FAIL_ON_ERROR(_yr_scan_match_callback(
+        -:  718:        data + offset, 0, flags, &callback_args));
+        -:  719:  }
+        -:  720:
+    #####:  721:  return ERROR_SUCCESS;
+        -:  722:}
+        -:  723:
+        -:  724:
+    #####:  725:static int _yr_scan_verify_literal_match(
+        -:  726:    YR_SCAN_CONTEXT* context,
+        -:  727:    YR_AC_MATCH* ac_match,
+        -:  728:    const uint8_t* data,
+        -:  729:    size_t data_size,
+        -:  730:    uint64_t data_base,
+        -:  731:    size_t offset)
+        -:  732:{
+    #####:  733:  int flags = 0;
+    #####:  734:  int forward_matches = 0;
+        -:  735:
+        -:  736:  CALLBACK_ARGS callback_args;
+    #####:  737:  YR_STRING* string = ac_match->string;
+        -:  738:
+    #####:  739:  if (STRING_FITS_IN_ATOM(string))
+        -:  740:  {
+    #####:  741:    forward_matches = ac_match->backtrack;
+        -:  742:  }
+    #####:  743:  else if (STRING_IS_NO_CASE(string))
+        -:  744:  {
+    #####:  745:    if (STRING_IS_ASCII(string))
+        -:  746:    {
+    #####:  747:      forward_matches = _yr_scan_icompare(
+        -:  748:          data + offset,
+        -:  749:          data_size - offset,
+        -:  750:          string->string,
+    #####:  751:          string->length);
+        -:  752:    }
+        -:  753:
+    #####:  754:    if (STRING_IS_WIDE(string) && forward_matches == 0)
+        -:  755:    {
+    #####:  756:      forward_matches = _yr_scan_wicompare(
+        -:  757:          data + offset,
+        -:  758:          data_size - offset,
+        -:  759:          string->string,
+    #####:  760:          string->length);
+        -:  761:    }
+        -:  762:  }
+        -:  763:  else
+        -:  764:  {
+    #####:  765:    if (STRING_IS_ASCII(string))
+        -:  766:    {
+    #####:  767:      forward_matches = _yr_scan_compare(
+        -:  768:          data + offset,
+        -:  769:          data_size - offset,
+        -:  770:          string->string,
+    #####:  771:          string->length);
+        -:  772:    }
+        -:  773:
+    #####:  774:    if (STRING_IS_WIDE(string) && forward_matches == 0)
+        -:  775:    {
+    #####:  776:      forward_matches = _yr_scan_wcompare(
+        -:  777:          data + offset,
+        -:  778:          data_size - offset,
+        -:  779:          string->string,
+    #####:  780:          string->length);
+        -:  781:    }
+        -:  782:
+    #####:  783:    if (STRING_IS_XOR(string) && forward_matches == 0)
+        -:  784:    {
+    #####:  785:      if (STRING_IS_WIDE(string))
+        -:  786:      {
+    #####:  787:        forward_matches = _yr_scan_xor_wcompare(
+        -:  788:          data + offset,
+        -:  789:          data_size - offset,
+        -:  790:          string->string,
+    #####:  791:          string->length);
+        -:  792:      }
+        -:  793:
+    #####:  794:      if (forward_matches == 0)
+        -:  795:      {
+    #####:  796:        forward_matches = _yr_scan_xor_compare(
+        -:  797:          data + offset,
+        -:  798:          data_size - offset,
+        -:  799:          string->string,
+    #####:  800:          string->length);
+        -:  801:      }
+        -:  802:    }
+        -:  803:
+        -:  804:  }
+        -:  805:
+    #####:  806:  if (forward_matches == 0)
+    #####:  807:    return ERROR_SUCCESS;
+        -:  808:
+    #####:  809:  if (forward_matches == string->length * 2)
+    #####:  810:    flags |= RE_FLAGS_WIDE;
+        -:  811:
+    #####:  812:  if (STRING_IS_NO_CASE(string))
+    #####:  813:    flags |= RE_FLAGS_NO_CASE;
+        -:  814:
+    #####:  815:  callback_args.context = context;
+    #####:  816:  callback_args.string = string;
+    #####:  817:  callback_args.data = data;
+    #####:  818:  callback_args.data_size = data_size;
+    #####:  819:  callback_args.data_base = data_base;
+    #####:  820:  callback_args.forward_matches = forward_matches;
+    #####:  821:  callback_args.full_word = STRING_IS_FULL_WORD(string);
+        -:  822:
+    #####:  823:  FAIL_ON_ERROR(_yr_scan_match_callback(
+        -:  824:      data + offset, 0, flags, &callback_args));
+        -:  825:
+    #####:  826:  return ERROR_SUCCESS;
+        -:  827:}
+        -:  828:
+        -:  829:
+    #####:  830:int yr_scan_verify_match(
+        -:  831:    YR_SCAN_CONTEXT* context,
+        -:  832:    YR_AC_MATCH* ac_match,
+        -:  833:    const uint8_t* data,
+        -:  834:    size_t data_size,
+        -:  835:    uint64_t data_base,
+        -:  836:    size_t offset)
+        -:  837:{
+    #####:  838:  YR_STRING* string = ac_match->string;
+        -:  839:
+        -:  840:  int result;
+        -:  841:
+    #####:  842:  if (data_size - offset <= 0)
+    #####:  843:    return ERROR_SUCCESS;
+        -:  844:
+    #####:  845:  if (STRING_IS_DISABLED(string))
+    #####:  846:    return ERROR_SUCCESS;
+        -:  847:
+    #####:  848:  if (context->flags & SCAN_FLAGS_FAST_MODE &&
+    #####:  849:      STRING_IS_SINGLE_MATCH(string) &&
+    #####:  850:      string->matches[context->tidx].head != NULL)
+    #####:  851:    return ERROR_SUCCESS;
+        -:  852:
+    #####:  853:  if (STRING_IS_FIXED_OFFSET(string) &&
+    #####:  854:      string->fixed_offset != data_base + offset)
+    #####:  855:    return ERROR_SUCCESS;
+        -:  856:
+        -:  857:  #ifdef PROFILING_ENABLED
+        -:  858:  uint64_t start_time = yr_stopwatch_elapsed_us(&context->stopwatch);
+        -:  859:  #endif
+        -:  860:
+    #####:  861:  if (STRING_IS_LITERAL(string))
+        -:  862:  {
+    #####:  863:    result = _yr_scan_verify_literal_match(
+        -:  864:        context, ac_match, data, data_size, data_base, offset);
+        -:  865:  }
+        -:  866:  else
+        -:  867:  {
+    #####:  868:    result = _yr_scan_verify_re_match(
+        -:  869:        context, ac_match, data, data_size, data_base, offset);
+        -:  870:  }
+        -:  871:
+    #####:  872:  if (result != ERROR_SUCCESS)
+    #####:  873:    context->last_error_string = string;
+        -:  874:
+        -:  875:  #ifdef PROFILING_ENABLED
+        -:  876:  uint64_t finish_time = yr_stopwatch_elapsed_us(&context->stopwatch);
+        -:  877:
+        -:  878:  string->rule->time_cost_per_thread[context->tidx] += (
+        -:  879:      finish_time - start_time);
+        -:  880:  #endif
+        -:  881:
+    #####:  882:  return result;
+        -:  883:}

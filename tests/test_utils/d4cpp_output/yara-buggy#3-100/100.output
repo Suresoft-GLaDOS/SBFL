@@ -1,0 +1,50 @@
+Making check in libyara
+make[1]: Entering directory '/home/workspace/libyara'
+make  check-am
+make[2]: Entering directory '/home/workspace/libyara'
+make[2]: Nothing to be done for 'check-am'.
+make[2]: Leaving directory '/home/workspace/libyara'
+make[1]: Leaving directory '/home/workspace/libyara'
+make[1]: Entering directory '/home/workspace'
+make  test-alignment test-atoms test-api test-rules test-pe test-elf test-version test-bitmask test-math test-stack test-exception  
+make[2]: Entering directory '/home/workspace'
+make[2]: 'test-alignment' is up to date.
+make[2]: 'test-atoms' is up to date.
+make[2]: 'test-api' is up to date.
+make[2]: 'test-rules' is up to date.
+make[2]: 'test-pe' is up to date.
+make[2]: 'test-elf' is up to date.
+make[2]: 'test-version' is up to date.
+make[2]: 'test-bitmask' is up to date.
+make[2]: 'test-math' is up to date.
+make[2]: 'test-stack' is up to date.
+make[2]: 'test-exception' is up to date.
+make[2]: Leaving directory '/home/workspace'
+make  check-TESTS
+make[2]: Entering directory '/home/workspace'
+make[3]: Entering directory '/home/workspace'
+PASS: test-alignment
+PASS: test-atoms
+PASS: test-api
+PASS: test-rules
+PASS: test-pe
+PASS: test-elf
+PASS: test-version
+PASS: test-bitmask
+PASS: test-math
+PASS: test-stack
+PASS: test-exception
+============================================================================
+Testsuite summary for yara 3.9.0
+============================================================================
+# TOTAL: 11
+# PASS:  11
+# SKIP:  0
+# XFAIL: 0
+# FAIL:  0
+# XPASS: 0
+# ERROR: 0
+============================================================================
+make[3]: Leaving directory '/home/workspace'
+make[2]: Leaving directory '/home/workspace'
+make[1]: Leaving directory '/home/workspace'

@@ -1,0 +1,545 @@
+        -:    0:Source:modules/hash.c
+        -:    0:Graph:/home/workspace/libyara/modules/hash.gcno
+        -:    0:Data:/home/workspace/libyara/modules/hash.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2014. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include "../crypto.h"
+        -:   31:
+        -:   32:#include <yara/mem.h>
+        -:   33:#include <yara/modules.h>
+        -:   34:
+        -:   35:#define MODULE_NAME hash
+        -:   36:
+        -:   37:
+        -:   38:typedef struct _CACHE_KEY
+        -:   39:{
+        -:   40:  int64_t offset;
+        -:   41:  int64_t length;
+        -:   42:
+        -:   43:} CACHE_KEY;
+        -:   44:
+        -:   45:
+    #####:   46:static void digest_to_ascii(
+        -:   47:    unsigned char* digest,
+        -:   48:    char* digest_ascii,
+        -:   49:    size_t digest_length)
+        -:   50:{
+        -:   51:  size_t i;
+        -:   52:
+    #####:   53:  for (i = 0; i < digest_length; i++)
+    #####:   54:    sprintf(digest_ascii + (i * 2), "%02x", digest[i]);
+        -:   55:
+    #####:   56:  digest_ascii[digest_length * 2] = '\0';
+    #####:   57:}
+        -:   58:
+        -:   59:
+    #####:   60:static char* get_from_cache(
+        -:   61:    YR_OBJECT* module_object,
+        -:   62:    const char* ns,
+        -:   63:    int64_t offset,
+        -:   64:    int64_t length)
+        -:   65:{
+        -:   66:  CACHE_KEY key;
+    #####:   67:  YR_HASH_TABLE* hash_table = (YR_HASH_TABLE*) module_object->data;
+        -:   68:
+    #####:   69:  key.offset = offset;
+    #####:   70:  key.length = length;
+        -:   71:
+    #####:   72:  return (char*) yr_hash_table_lookup_raw_key(
+        -:   73:      hash_table,
+        -:   74:      &key,
+        -:   75:      sizeof(key),
+        -:   76:      ns);
+        -:   77:}
+        -:   78:
+        -:   79:
+    #####:   80:static int add_to_cache(
+        -:   81:    YR_OBJECT* module_object,
+        -:   82:    const char* ns,
+        -:   83:    int64_t offset,
+        -:   84:    int64_t length,
+        -:   85:    const char* digest)
+        -:   86:{
+        -:   87:  CACHE_KEY key;
+    #####:   88:  YR_HASH_TABLE* hash_table = (YR_HASH_TABLE*) module_object->data;
+        -:   89:
+    #####:   90:  char* copy = yr_strdup(digest);
+        -:   91:
+    #####:   92:  key.offset = offset;
+    #####:   93:  key.length = length;
+        -:   94:
+    #####:   95:  if (copy == NULL)
+    #####:   96:    return ERROR_INSUFFICIENT_MEMORY;
+        -:   97:
+    #####:   98:  return yr_hash_table_add_raw_key(
+        -:   99:      hash_table,
+        -:  100:      &key,
+        -:  101:      sizeof(key),
+        -:  102:      ns,
+        -:  103:      (void*) copy);
+        -:  104:}
+        -:  105:
+        -:  106:
+    #####:  107:define_function(string_md5)
+        -:  108:{
+        -:  109:  unsigned char digest[YR_MD5_LEN];
+        -:  110:  char digest_ascii[YR_MD5_LEN * 2 + 1];
+        -:  111:
+        -:  112:  yr_md5_ctx md5_context;
+    #####:  113:  SIZED_STRING* s = sized_string_argument(1);
+        -:  114:
+    #####:  115:  yr_md5_init(&md5_context);
+    #####:  116:  yr_md5_update(&md5_context, s->c_string, s->length);
+    #####:  117:  yr_md5_final(digest, &md5_context);
+        -:  118:
+    #####:  119:  digest_to_ascii(digest, digest_ascii, YR_MD5_LEN);
+        -:  120:
+    #####:  121:  return_string(digest_ascii);
+        -:  122:}
+        -:  123:
+        -:  124:
+    #####:  125:define_function(string_sha256)
+        -:  126:{
+        -:  127:  unsigned char digest[YR_SHA256_LEN];
+        -:  128:  char digest_ascii[YR_SHA256_LEN * 2 + 1];
+        -:  129:
+        -:  130:  yr_sha256_ctx sha256_context;
+    #####:  131:  SIZED_STRING* s = sized_string_argument(1);
+        -:  132:
+    #####:  133:  yr_sha256_init(&sha256_context);
+    #####:  134:  yr_sha256_update(&sha256_context, s->c_string, s->length);
+    #####:  135:  yr_sha256_final(digest, &sha256_context);
+        -:  136:
+    #####:  137:  digest_to_ascii(digest, digest_ascii, YR_SHA256_LEN);
+        -:  138:
+    #####:  139:  return_string(digest_ascii);
+        -:  140:}
+        -:  141:
+        -:  142:
+    #####:  143:define_function(string_sha1)
+        -:  144:{
+        -:  145:  unsigned char digest[YR_SHA1_LEN];
+        -:  146:  char digest_ascii[YR_SHA1_LEN * 2 + 1];
+        -:  147:
+        -:  148:  yr_sha1_ctx sha_context;
+    #####:  149:  SIZED_STRING* s = sized_string_argument(1);
+        -:  150:
+    #####:  151:  yr_sha1_init(&sha_context);
+    #####:  152:  yr_sha1_update(&sha_context, s->c_string, s->length);
+    #####:  153:  yr_sha1_final(digest, &sha_context);
+        -:  154:
+    #####:  155:  digest_to_ascii(digest, digest_ascii, YR_SHA1_LEN);
+        -:  156:
+    #####:  157:  return_string(digest_ascii);
+        -:  158:}
+        -:  159:
+        -:  160:
+    #####:  161:define_function(string_checksum32)
+        -:  162:{
+        -:  163:  size_t i;
+        -:  164:
+    #####:  165:  SIZED_STRING* s = sized_string_argument(1);
+    #####:  166:  uint32_t checksum = 0;
+        -:  167:
+    #####:  168:  for (i = 0; i < s->length; i++)
+    #####:  169:    checksum += (uint8_t)(s->c_string[i]);
+        -:  170:
+    #####:  171:  return_integer(checksum);
+        -:  172:}
+        -:  173:
+        -:  174:
+    #####:  175:define_function(data_md5)
+        -:  176:{
+        -:  177:  yr_md5_ctx md5_context;
+        -:  178:
+        -:  179:  unsigned char digest[YR_MD5_LEN];
+        -:  180:  char digest_ascii[YR_MD5_LEN * 2 + 1];
+        -:  181:  char* cached_ascii_digest;
+        -:  182:
+    #####:  183:  bool past_first_block = false;
+        -:  184:
+    #####:  185:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:  186:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:  187:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:  188:
+    #####:  189:  int64_t arg_offset = integer_argument(1);   // offset where to start
+    #####:  190:  int64_t arg_length = integer_argument(2);   // length of bytes we want hash on
+        -:  191:
+    #####:  192:  int64_t offset = arg_offset;
+    #####:  193:  int64_t length = arg_length;
+        -:  194:
+    #####:  195:  yr_md5_init(&md5_context);
+        -:  196:
+    #####:  197:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  198:    return_string(UNDEFINED);
+        -:  199:
+    #####:  200:  cached_ascii_digest = get_from_cache(
+        -:  201:      module(), "md5", arg_offset, arg_length);
+        -:  202:
+    #####:  203:  if (cached_ascii_digest != NULL)
+    #####:  204:    return_string(cached_ascii_digest);
+        -:  205:
+    #####:  206:  foreach_memory_block(iterator, block)
+        -:  207:  {
+        -:  208:    // if desired block within current block
+        -:  209:
+    #####:  210:    if (offset >= block->base &&
+    #####:  211:        offset < block->base + block->size)
+    #####:  212:    {
+    #####:  213:      const uint8_t* block_data = block->fetch_data(block);
+        -:  214:
+    #####:  215:      if (block_data != NULL)
+        -:  216:      {
+    #####:  217:        size_t data_offset = (size_t) (offset - block->base);
+    #####:  218:        size_t data_len = (size_t) yr_min(
+        -:  219:          length, (size_t) (block->size - data_offset));
+        -:  220:
+    #####:  221:        offset += data_len;
+    #####:  222:        length -= data_len;
+        -:  223:
+    #####:  224:        yr_md5_update(&md5_context, block_data + data_offset, data_len);
+        -:  225:      }
+        -:  226:
+    #####:  227:      past_first_block = true;
+        -:  228:    }
+    #####:  229:    else if (past_first_block)
+        -:  230:    {
+        -:  231:      // If offset is not within current block and we already
+        -:  232:      // past the first block then the we are trying to compute
+        -:  233:      // the checksum over a range of non contiguous blocks. As
+        -:  234:      // range contains gaps of undefined data the checksum is
+        -:  235:      // undefined.
+        -:  236:
+    #####:  237:      return_string(UNDEFINED);
+        -:  238:    }
+        -:  239:
+    #####:  240:    if (block->base + block->size > offset + length)
+    #####:  241:      break;
+        -:  242:  }
+        -:  243:
+    #####:  244:  if (!past_first_block)
+    #####:  245:    return_string(UNDEFINED);
+        -:  246:
+    #####:  247:  yr_md5_final(digest, &md5_context);
+        -:  248:
+    #####:  249:  digest_to_ascii(digest, digest_ascii, YR_MD5_LEN);
+        -:  250:
+    #####:  251:  FAIL_ON_ERROR(
+        -:  252:      add_to_cache(module(), "md5", arg_offset, arg_length, digest_ascii));
+        -:  253:
+    #####:  254:  return_string(digest_ascii);
+        -:  255:}
+        -:  256:
+        -:  257:
+    #####:  258:define_function(data_sha1)
+        -:  259:{
+        -:  260:  yr_sha1_ctx sha_context;
+        -:  261:
+        -:  262:  unsigned char digest[YR_SHA1_LEN];
+        -:  263:  char digest_ascii[YR_SHA1_LEN * 2 + 1];
+        -:  264:  char* cached_ascii_digest;
+        -:  265:
+    #####:  266:  int past_first_block = false;
+        -:  267:
+    #####:  268:  int64_t arg_offset = integer_argument(1);   // offset where to start
+    #####:  269:  int64_t arg_length = integer_argument(2);   // length of bytes we want hash on
+        -:  270:
+    #####:  271:  int64_t offset = arg_offset;
+    #####:  272:  int64_t length = arg_length;
+        -:  273:
+    #####:  274:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:  275:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:  276:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:  277:
+    #####:  278:  yr_sha1_init(&sha_context);
+        -:  279:
+    #####:  280:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  281:    return_string(UNDEFINED);
+        -:  282:
+    #####:  283:  cached_ascii_digest = get_from_cache(
+        -:  284:      module(), "sha1", arg_offset, arg_length);
+        -:  285:
+    #####:  286:  if (cached_ascii_digest != NULL)
+    #####:  287:    return_string(cached_ascii_digest);
+        -:  288:
+    #####:  289:  foreach_memory_block(iterator, block)
+        -:  290:  {
+        -:  291:    // if desired block within current block
+    #####:  292:    if (offset >= block->base &&
+    #####:  293:        offset < block->base + block->size)
+    #####:  294:    {
+    #####:  295:      const uint8_t* block_data = block->fetch_data(block);
+        -:  296:
+    #####:  297:      if (block_data != NULL)
+        -:  298:      {
+    #####:  299:        size_t data_offset = (size_t) (offset - block->base);
+    #####:  300:        size_t data_len = (size_t) yr_min(
+        -:  301:          length, (size_t) block->size - data_offset);
+        -:  302:
+    #####:  303:        offset += data_len;
+    #####:  304:        length -= data_len;
+        -:  305:
+    #####:  306:        yr_sha1_update(&sha_context, block_data + data_offset, data_len);
+        -:  307:      }
+        -:  308:
+    #####:  309:      past_first_block = true;
+        -:  310:    }
+    #####:  311:    else if (past_first_block)
+        -:  312:    {
+        -:  313:      // If offset is not within current block and we already
+        -:  314:      // past the first block then the we are trying to compute
+        -:  315:      // the checksum over a range of non contiguous blocks. As
+        -:  316:      // range contains gaps of undefined data the checksum is
+        -:  317:      // undefined.
+        -:  318:
+    #####:  319:      return_string(UNDEFINED);
+        -:  320:    }
+        -:  321:
+    #####:  322:    if (block->base + block->size > offset + length)
+    #####:  323:      break;
+        -:  324:  }
+        -:  325:
+    #####:  326:  if (!past_first_block)
+    #####:  327:    return_string(UNDEFINED);
+        -:  328:
+    #####:  329:  yr_sha1_final(digest, &sha_context);
+        -:  330:
+    #####:  331:  digest_to_ascii(digest, digest_ascii, YR_SHA1_LEN);
+        -:  332:
+    #####:  333:  FAIL_ON_ERROR(
+        -:  334:      add_to_cache(module(), "sha1", arg_offset, arg_length, digest_ascii));
+        -:  335:
+    #####:  336:  return_string(digest_ascii);
+        -:  337:}
+        -:  338:
+        -:  339:
+    #####:  340:define_function(data_sha256)
+        -:  341:{
+        -:  342:  yr_sha256_ctx sha256_context;
+        -:  343:
+        -:  344:  unsigned char digest[YR_SHA256_LEN];
+        -:  345:  char digest_ascii[YR_SHA256_LEN * 2 + 1];
+        -:  346:  char* cached_ascii_digest;
+        -:  347:
+    #####:  348:  int past_first_block = false;
+        -:  349:
+    #####:  350:  int64_t arg_offset = integer_argument(1);   // offset where to start
+    #####:  351:  int64_t arg_length = integer_argument(2);   // length of bytes we want hash on
+        -:  352:
+    #####:  353:  int64_t offset = arg_offset;
+    #####:  354:  int64_t length = arg_length;
+        -:  355:
+    #####:  356:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:  357:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:  358:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:  359:
+    #####:  360:  yr_sha256_init(&sha256_context);
+        -:  361:
+    #####:  362:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  363:    return_string(UNDEFINED);
+        -:  364:
+    #####:  365:  cached_ascii_digest = get_from_cache(
+        -:  366:      module(), "sha256", arg_offset, arg_length);
+        -:  367:
+    #####:  368:  if (cached_ascii_digest != NULL)
+    #####:  369:    return_string(cached_ascii_digest);
+        -:  370:
+    #####:  371:  foreach_memory_block(iterator, block)
+        -:  372:  {
+        -:  373:    // if desired block within current block
+    #####:  374:    if (offset >= block->base &&
+    #####:  375:        offset < block->base + block->size)
+    #####:  376:    {
+    #####:  377:      const uint8_t* block_data = block->fetch_data(block);
+        -:  378:
+    #####:  379:      if (block_data != NULL)
+        -:  380:      {
+    #####:  381:        size_t data_offset = (size_t) (offset - block->base);
+    #####:  382:        size_t data_len = (size_t) yr_min(length, block->size - data_offset);
+        -:  383:
+    #####:  384:        offset += data_len;
+    #####:  385:        length -= data_len;
+        -:  386:
+    #####:  387:        yr_sha256_update(&sha256_context, block_data + data_offset, data_len);
+        -:  388:      }
+        -:  389:
+    #####:  390:      past_first_block = true;
+        -:  391:    }
+    #####:  392:    else if (past_first_block)
+        -:  393:    {
+        -:  394:      // If offset is not within current block and we already
+        -:  395:      // past the first block then the we are trying to compute
+        -:  396:      // the checksum over a range of non contiguous blocks. As
+        -:  397:      // range contains gaps of undefined data the checksum is
+        -:  398:      // undefined.
+        -:  399:
+    #####:  400:      return_string(UNDEFINED);
+        -:  401:    }
+        -:  402:
+    #####:  403:    if (block->base + block->size > offset + length)
+    #####:  404:      break;
+        -:  405:  }
+        -:  406:
+    #####:  407:  if (!past_first_block)
+    #####:  408:    return_string(UNDEFINED);
+        -:  409:
+    #####:  410:  yr_sha256_final(digest, &sha256_context);
+        -:  411:
+    #####:  412:  digest_to_ascii(digest, digest_ascii, YR_SHA256_LEN);
+        -:  413:
+    #####:  414:  FAIL_ON_ERROR(
+        -:  415:      add_to_cache(module(), "sha256", arg_offset, arg_length, digest_ascii));
+        -:  416:
+    #####:  417:  return_string(digest_ascii);
+        -:  418:}
+        -:  419:
+        -:  420:
+    #####:  421:define_function(data_checksum32)
+        -:  422:{
+    #####:  423:  int64_t offset = integer_argument(1);   // offset where to start
+    #####:  424:  int64_t length = integer_argument(2);   // length of bytes we want hash on
+        -:  425:
+    #####:  426:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:  427:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:  428:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:  429:
+    #####:  430:  uint32_t checksum = 0;
+    #####:  431:  int past_first_block = false;
+        -:  432:
+    #####:  433:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  434:    return_integer(UNDEFINED);
+        -:  435:
+    #####:  436:  foreach_memory_block(iterator, block)
+        -:  437:  {
+    #####:  438:    if (offset >= block->base &&
+    #####:  439:        offset < block->base + block->size)
+    #####:  440:    {
+    #####:  441:      const uint8_t* block_data = block->fetch_data(block);
+        -:  442:
+    #####:  443:      if (block_data != NULL)
+        -:  444:      {
+        -:  445:        size_t i;
+        -:  446:
+    #####:  447:        size_t data_offset = (size_t) (offset - block->base);
+    #####:  448:        size_t data_len = (size_t) yr_min(length, block->size - data_offset);
+        -:  449:
+    #####:  450:        offset += data_len;
+    #####:  451:        length -= data_len;
+        -:  452:
+    #####:  453:        for (i = 0; i < data_len; i++)
+    #####:  454:          checksum += *(block_data + data_offset + i);
+        -:  455:      }
+        -:  456:
+    #####:  457:      past_first_block = true;
+        -:  458:    }
+    #####:  459:    else if (past_first_block)
+        -:  460:    {
+        -:  461:      // If offset is not within current block and we already
+        -:  462:      // past the first block then the we are trying to compute
+        -:  463:      // the checksum over a range of non contiguous blocks. As
+        -:  464:      // range contains gaps of undefined data the checksum is
+        -:  465:      // undefined.
+        -:  466:
+    #####:  467:      return_integer(UNDEFINED);
+        -:  468:    }
+        -:  469:
+    #####:  470:    if (block->base + block->size > offset + length)
+    #####:  471:      break;
+        -:  472:  }
+        -:  473:
+    #####:  474:  if (!past_first_block)
+    #####:  475:    return_integer(UNDEFINED);
+        -:  476:
+    #####:  477:  return_integer(checksum);
+        -:  478:}
+        -:  479:
+        -:  480:
+        -:  481:
+    #####:  482:begin_declarations;
+        -:  483:
+    #####:  484:  declare_function("md5", "ii", "s", data_md5);
+    #####:  485:  declare_function("md5", "s", "s", string_md5);
+        -:  486:
+    #####:  487:  declare_function("sha1", "ii", "s", data_sha1);
+    #####:  488:  declare_function("sha1", "s", "s", string_sha1);
+        -:  489:
+    #####:  490:  declare_function("sha256", "ii", "s", data_sha256);
+    #####:  491:  declare_function("sha256", "s", "s", string_sha256);
+        -:  492:
+    #####:  493:  declare_function("checksum32", "ii", "i", data_checksum32);
+    #####:  494:  declare_function("checksum32", "s", "i", string_checksum32);
+        -:  495:
+    #####:  496:end_declarations;
+        -:  497:
+        -:  498:
+        6:  499:int module_initialize(
+        -:  500:    YR_MODULE* module)
+        -:  501:{
+        6:  502:  return ERROR_SUCCESS;
+        -:  503:}
+        -:  504:
+        -:  505:
+        4:  506:int module_finalize(
+        -:  507:    YR_MODULE* module)
+        -:  508:{
+        4:  509:  return ERROR_SUCCESS;
+        -:  510:}
+        -:  511:
+        -:  512:
+    #####:  513:int module_load(
+        -:  514:    YR_SCAN_CONTEXT* context,
+        -:  515:    YR_OBJECT* module_object,
+        -:  516:    void* module_data,
+        -:  517:    size_t module_data_size)
+        -:  518:{
+        -:  519:  YR_HASH_TABLE* hash_table;
+        -:  520:
+    #####:  521:  FAIL_ON_ERROR(yr_hash_table_create(17, &hash_table));
+        -:  522:
+    #####:  523:  module_object->data = hash_table;
+        -:  524:
+    #####:  525:  return ERROR_SUCCESS;
+        -:  526:}
+        -:  527:
+        -:  528:
+    #####:  529:int module_unload(
+        -:  530:    YR_OBJECT* module_object)
+        -:  531:{
+    #####:  532:  YR_HASH_TABLE* hash_table = (YR_HASH_TABLE*) module_object->data;
+        -:  533:
+    #####:  534:  if (hash_table != NULL)
+    #####:  535:    yr_hash_table_destroy(
+        -:  536:        hash_table,
+        -:  537:        (YR_HASH_TABLE_FREE_VALUE_FUNC) yr_free);
+        -:  538:
+    #####:  539:  return ERROR_SUCCESS;
+        -:  540:}

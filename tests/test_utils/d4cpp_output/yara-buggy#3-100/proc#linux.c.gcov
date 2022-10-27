@@ -1,0 +1,182 @@
+        -:    0:Source:proc/linux.c
+        -:    0:Graph:/home/workspace/libyara/proc/linux.gcno
+        -:    0:Data:/home/workspace/libyara/proc/linux.gcda
+        -:    0:Runs:7
+        -:    0:Programs:7
+        -:    1:/*
+        -:    2:Copyright (c) 2007-2017. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#if defined(USE_LINUX_PROC)
+        -:   31:
+        -:   32:#include <fcntl.h>
+        -:   33:#include <inttypes.h>
+        -:   34:#include <unistd.h>
+        -:   35:#include <sys/types.h>
+        -:   36:#include <sys/wait.h>
+        -:   37:#include <errno.h>
+        -:   38:
+        -:   39:#include <yara/error.h>
+        -:   40:#include <yara/proc.h>
+        -:   41:#include <yara/mem.h>
+        -:   42:
+        -:   43:
+        -:   44:typedef struct _YR_PROC_INFO {
+        -:   45:  int             pid;
+        -:   46:  int             mem_fd;
+        -:   47:  FILE*           maps;
+        -:   48:} YR_PROC_INFO;
+        -:   49:
+        -:   50:
+    #####:   51:int _yr_process_attach(
+        -:   52:    int pid,
+        -:   53:    YR_PROC_ITERATOR_CTX* context)
+        -:   54:{
+        -:   55:  char buffer[256];
+        -:   56:
+    #####:   57:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) yr_malloc(sizeof(YR_PROC_INFO));
+        -:   58:
+    #####:   59:  if (proc_info == NULL)
+    #####:   60:    return ERROR_INSUFFICIENT_MEMORY;
+        -:   61:
+    #####:   62:  context->proc_info = proc_info;
+        -:   63:
+    #####:   64:  proc_info->pid = pid;
+    #####:   65:  proc_info->maps = NULL;
+    #####:   66:  proc_info->mem_fd = -1;
+        -:   67:
+    #####:   68:  snprintf(buffer, sizeof(buffer), "/proc/%u/maps", pid);
+    #####:   69:  proc_info->maps = fopen(buffer, "r");
+        -:   70:
+    #####:   71:  if (proc_info->maps == NULL)
+        -:   72:  {
+    #####:   73:    yr_free(proc_info);
+    #####:   74:    return ERROR_COULD_NOT_ATTACH_TO_PROCESS;
+        -:   75:  }
+        -:   76:
+    #####:   77:  snprintf(buffer, sizeof(buffer), "/proc/%u/mem", pid);
+    #####:   78:  proc_info->mem_fd = open(buffer, O_RDONLY);
+        -:   79:
+    #####:   80:  if (proc_info->mem_fd == -1)
+        -:   81:  {
+    #####:   82:    fclose(proc_info->maps);
+    #####:   83:    proc_info->maps = NULL;
+        -:   84:
+    #####:   85:    yr_free(proc_info);
+        -:   86:
+    #####:   87:    return ERROR_COULD_NOT_ATTACH_TO_PROCESS;
+        -:   88:  }
+        -:   89:
+    #####:   90:  return ERROR_SUCCESS;
+        -:   91:}
+        -:   92:
+        -:   93:
+    #####:   94:int _yr_process_detach(
+        -:   95:    YR_PROC_ITERATOR_CTX* context)
+        -:   96:{
+    #####:   97:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) context->proc_info;
+        -:   98:
+    #####:   99:  fclose(proc_info->maps);
+    #####:  100:  close(proc_info->mem_fd);
+        -:  101:
+    #####:  102:  return ERROR_SUCCESS;
+        -:  103:}
+        -:  104:
+        -:  105:
+    #####:  106:YR_API const uint8_t* yr_process_fetch_memory_block_data(
+        -:  107:    YR_MEMORY_BLOCK* block)
+        -:  108:{
+    #####:  109:  YR_PROC_ITERATOR_CTX* context = (YR_PROC_ITERATOR_CTX*) block->context;
+    #####:  110:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) context->proc_info;
+        -:  111:
+    #####:  112:  if (context->buffer_size < block->size)
+        -:  113:  {
+    #####:  114:    if (context->buffer != NULL)
+    #####:  115:      yr_free((void*) context->buffer);
+        -:  116:
+    #####:  117:    context->buffer = (const uint8_t*) yr_malloc(block->size);
+        -:  118:
+    #####:  119:    if (context->buffer != NULL)
+        -:  120:    {
+    #####:  121:      context->buffer_size = block->size;
+        -:  122:    }
+        -:  123:    else
+        -:  124:    {
+    #####:  125:      context->buffer_size = 0;
+    #####:  126:      return NULL;
+        -:  127:    }
+        -:  128:  }
+        -:  129:
+    #####:  130:  if (pread(proc_info->mem_fd,
+    #####:  131:            (void *) context->buffer,
+        -:  132:            block->size,
+    #####:  133:            block->base) == -1)
+        -:  134:  {
+    #####:  135:    return NULL;
+        -:  136:  }
+        -:  137:
+    #####:  138:  return context->buffer;
+        -:  139:}
+        -:  140:
+        -:  141:
+    #####:  142:YR_API YR_MEMORY_BLOCK* yr_process_get_next_memory_block(
+        -:  143:    YR_MEMORY_BLOCK_ITERATOR* iterator)
+        -:  144:{
+    #####:  145:  YR_PROC_ITERATOR_CTX* context = (YR_PROC_ITERATOR_CTX*) iterator->context;
+    #####:  146:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) context->proc_info;
+        -:  147:
+        -:  148:  char buffer[256];
+        -:  149:  uint64_t begin, end;
+        -:  150:
+    #####:  151:  if (fgets(buffer, sizeof(buffer), proc_info->maps) != NULL)
+        -:  152:  {
+    #####:  153:    sscanf(buffer, "%"SCNx64"-%"SCNx64, &begin, &end);
+        -:  154:
+    #####:  155:    context->current_block.base = begin;
+    #####:  156:    context->current_block.size = end - begin;
+        -:  157:
+    #####:  158:    return &context->current_block;
+        -:  159:  }
+        -:  160:
+    #####:  161:  return NULL;
+        -:  162:}
+        -:  163:
+        -:  164:
+    #####:  165:YR_API YR_MEMORY_BLOCK* yr_process_get_first_memory_block(
+        -:  166:    YR_MEMORY_BLOCK_ITERATOR* iterator)
+        -:  167:{
+    #####:  168:  YR_PROC_ITERATOR_CTX* context = (YR_PROC_ITERATOR_CTX*) iterator->context;
+    #####:  169:  YR_PROC_INFO* proc_info = (YR_PROC_INFO*) context->proc_info;
+        -:  170:
+    #####:  171:  if (fseek(proc_info->maps, 0, SEEK_SET) != 0)
+    #####:  172:    return NULL;
+        -:  173:
+    #####:  174:  return yr_process_get_next_memory_block(iterator);
+        -:  175:}
+        -:  176:
+        -:  177:#endif

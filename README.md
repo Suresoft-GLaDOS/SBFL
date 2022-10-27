@@ -64,3 +64,9 @@ python -m pip install coverage
 python -m coverage run --source=sbfl -m pytest
 python -m coverage report
 ```
+
+## Running mutation testing
+```bash
+pip install mutmut
+mutmut run
+```

@@ -1,0 +1,433 @@
+        -:    0:Source:re_grammar.y
+        -:    0:Graph:/home/workspace/libyara/re_grammar.gcno
+        -:    0:Data:/home/workspace/libyara/re_grammar.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2013. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:%{
+        -:   31:
+        -:   32:#include <yara/integers.h>
+        -:   33:#include <yara/utils.h>
+        -:   34:#include <yara/error.h>
+        -:   35:#include <yara/limits.h>
+        -:   36:#include <yara/mem.h>
+        -:   37:#include <yara/re.h>
+        -:   38:#include <yara/re_lexer.h>
+        -:   39:
+        -:   40:
+        -:   41:#define YYERROR_VERBOSE
+        -:   42:
+        -:   43:#define YYMALLOC yr_malloc
+        -:   44:#define YYFREE yr_free
+        -:   45:
+        -:   46:#define mark_as_not_fast_regexp() \
+        -:   47:    ((RE_AST*) yyget_extra(yyscanner))->flags &= ~RE_FLAGS_FAST_REGEXP
+        -:   48:
+        -:   49:#define fail_if(x, error) \
+        -:   50:    if (x) \
+        -:   51:    { \
+        -:   52:      lex_env->last_error = error; \
+        -:   53:      YYABORT; \
+        -:   54:    } \
+        -:   55:
+        -:   56:#define destroy_node_if(x, node) \
+        -:   57:    if (x) \
+        -:   58:    { \
+        -:   59:      yr_re_node_destroy(node); \
+        -:   60:    } \
+        -:   61:
+        -:   62:%}
+        -:   63:
+        -:   64:%name-prefix "re_yy"
+        -:   65:%pure-parser
+        -:   66:
+        -:   67:%parse-param {void *yyscanner}
+        -:   68:%parse-param {RE_LEX_ENVIRONMENT *lex_env}
+        -:   69:
+        -:   70:%lex-param {yyscan_t yyscanner}
+        -:   71:%lex-param {RE_LEX_ENVIRONMENT *lex_env}
+        -:   72:
+        -:   73:%union {
+        -:   74:  int integer;
+        -:   75:  uint32_t range;
+        -:   76:  RE_NODE* re_node;
+        -:   77:  RE_CLASS* re_class;
+        -:   78:}
+        -:   79:
+        -:   80:
+        -:   81:%token <integer> _CHAR_ _ANY_
+        -:   82:%token <range> _RANGE_
+        -:   83:%token <re_class> _CLASS_
+        -:   84:
+        -:   85:%token _WORD_CHAR_
+        -:   86:%token _NON_WORD_CHAR_
+        -:   87:%token _SPACE_
+        -:   88:%token _NON_SPACE_
+        -:   89:%token _DIGIT_
+        -:   90:%token _NON_DIGIT_
+        -:   91:%token _WORD_BOUNDARY_
+        -:   92:%token _NON_WORD_BOUNDARY_
+        -:   93:
+        -:   94:%type <re_node>  alternative concatenation repeat single
+        -:   95:
+    #####:   96:%destructor { yr_free($$); $$ = NULL; } _CLASS_
+    #####:   97:%destructor { yr_re_node_destroy($$); $$ = NULL; } alternative
+    #####:   98:%destructor { yr_re_node_destroy($$); $$ = NULL; } concatenation
+    #####:   99:%destructor { yr_re_node_destroy($$); $$ = NULL; } repeat
+    #####:  100:%destructor { yr_re_node_destroy($$); $$ = NULL; } single
+        -:  101:
+        -:  102:%%
+        -:  103:
+        -:  104:re  : alternative
+        -:  105:      {
+    #####:  106:        RE_AST* re_ast = yyget_extra(yyscanner);
+    #####:  107:        re_ast->root_node = $1;
+        -:  108:      }
+        -:  109:    | error
+        -:  110:    ;
+        -:  111:
+        -:  112:alternative
+        -:  113:    : concatenation
+        -:  114:      {
+    #####:  115:        $$ = $1;
+        -:  116:      }
+        -:  117:    | alternative '|' concatenation
+        -:  118:      {
+    #####:  119:        mark_as_not_fast_regexp();
+        -:  120:
+    #####:  121:        $$ = yr_re_node_create(RE_NODE_ALT);
+        -:  122:
+    #####:  123:        destroy_node_if($$ == NULL, $1);
+    #####:  124:        destroy_node_if($$ == NULL, $3);
+        -:  125:
+    #####:  126:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  127:
+    #####:  128:        yr_re_node_append_child($$, $1);
+    #####:  129:        yr_re_node_append_child($$, $3);
+        -:  130:      }
+        -:  131:    | alternative '|'
+        -:  132:      {
+        -:  133:        RE_NODE* node;
+        -:  134:
+    #####:  135:        mark_as_not_fast_regexp();
+        -:  136:
+    #####:  137:        node = yr_re_node_create(RE_NODE_EMPTY);
+        -:  138:
+    #####:  139:        destroy_node_if($$ == NULL, $1);
+    #####:  140:        fail_if(node == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  141:
+    #####:  142:        $$ = yr_re_node_create(RE_NODE_ALT);
+        -:  143:
+    #####:  144:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  145:
+    #####:  146:        yr_re_node_append_child($$, $1);
+    #####:  147:        yr_re_node_append_child($$, node);
+        -:  148:      }
+        -:  149:    ;
+        -:  150:
+        -:  151:concatenation
+        -:  152:    : repeat
+        -:  153:      {
+    #####:  154:        $$ = yr_re_node_create(RE_NODE_CONCAT);
+        -:  155:
+    #####:  156:        destroy_node_if($$ == NULL, $1);
+    #####:  157:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  158:
+    #####:  159:        yr_re_node_append_child($$, $1);
+        -:  160:      }
+        -:  161:    | concatenation repeat
+        -:  162:      {
+    #####:  163:        yr_re_node_append_child($1, $2);
+    #####:  164:        $$ = $1;
+        -:  165:      }
+        -:  166:    ;
+        -:  167:
+        -:  168:repeat
+        -:  169:    : single '*'
+        -:  170:      {
+        -:  171:        RE_AST* re_ast;
+        -:  172:
+    #####:  173:        mark_as_not_fast_regexp();
+        -:  174:
+    #####:  175:        re_ast = yyget_extra(yyscanner);
+    #####:  176:        re_ast->flags |= RE_FLAGS_GREEDY;
+        -:  177:
+    #####:  178:        $$ = yr_re_node_create(RE_NODE_STAR);
+        -:  179:
+    #####:  180:        destroy_node_if($$ == NULL, $1);
+    #####:  181:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  182:
+    #####:  183:        yr_re_node_append_child($$, $1);
+        -:  184:      }
+        -:  185:    | single '*' '?'
+        -:  186:      {
+        -:  187:        RE_AST* re_ast;
+        -:  188:
+    #####:  189:        mark_as_not_fast_regexp();
+        -:  190:
+    #####:  191:        re_ast = yyget_extra(yyscanner);
+    #####:  192:        re_ast->flags |= RE_FLAGS_UNGREEDY;
+        -:  193:
+    #####:  194:        $$ = yr_re_node_create(RE_NODE_STAR);
+        -:  195:
+    #####:  196:        destroy_node_if($$ == NULL, $1);
+    #####:  197:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  198:
+    #####:  199:        yr_re_node_append_child($$, $1);
+        -:  200:
+    #####:  201:        $$->greedy = false;
+        -:  202:      }
+        -:  203:    | single '+'
+        -:  204:      {
+        -:  205:        RE_AST* re_ast;
+        -:  206:
+    #####:  207:        mark_as_not_fast_regexp();
+        -:  208:
+    #####:  209:        re_ast = yyget_extra(yyscanner);
+    #####:  210:        re_ast->flags |= RE_FLAGS_GREEDY;
+        -:  211:
+    #####:  212:        $$ = yr_re_node_create(RE_NODE_PLUS);
+        -:  213:
+    #####:  214:        destroy_node_if($$ == NULL, $1);
+    #####:  215:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  216:
+    #####:  217:        yr_re_node_append_child($$, $1);
+        -:  218:      }
+        -:  219:    | single '+' '?'
+        -:  220:      {
+        -:  221:        RE_AST* re_ast;
+        -:  222:
+    #####:  223:        mark_as_not_fast_regexp();
+        -:  224:
+    #####:  225:        re_ast = yyget_extra(yyscanner);
+    #####:  226:        re_ast->flags |= RE_FLAGS_UNGREEDY;
+        -:  227:
+    #####:  228:        $$ = yr_re_node_create(RE_NODE_PLUS);
+        -:  229:
+    #####:  230:        destroy_node_if($$ == NULL, $1);
+    #####:  231:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  232:
+    #####:  233:        yr_re_node_append_child($$, $1);
+    #####:  234:        $$->greedy = false;
+        -:  235:      }
+        -:  236:    | single '?'
+        -:  237:      {
+    #####:  238:        RE_AST* re_ast = yyget_extra(yyscanner);
+    #####:  239:        re_ast->flags |= RE_FLAGS_GREEDY;
+        -:  240:
+    #####:  241:        if ($1->type == RE_NODE_ANY)
+        -:  242:        {
+    #####:  243:          $$ = yr_re_node_create(RE_NODE_RANGE_ANY);
+    #####:  244:          destroy_node_if(true, $1);
+    #####:  245:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  246:        }
+        -:  247:        else
+        -:  248:        {
+    #####:  249:          mark_as_not_fast_regexp();
+    #####:  250:          $$ = yr_re_node_create(RE_NODE_RANGE);
+    #####:  251:          destroy_node_if($$ == NULL, $1);
+    #####:  252:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+    #####:  253:          yr_re_node_append_child($$, $1);
+        -:  254:        }
+        -:  255:
+    #####:  256:        $$->start = 0;
+    #####:  257:        $$->end = 1;
+        -:  258:      }
+        -:  259:    | single '?' '?'
+        -:  260:      {
+    #####:  261:        RE_AST* re_ast = yyget_extra(yyscanner);
+    #####:  262:        re_ast->flags |= RE_FLAGS_UNGREEDY;
+        -:  263:
+    #####:  264:        if ($1->type == RE_NODE_ANY)
+        -:  265:        {
+    #####:  266:          $$ = yr_re_node_create(RE_NODE_RANGE_ANY);
+    #####:  267:          destroy_node_if(true, $1);
+    #####:  268:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  269:        }
+        -:  270:        else
+        -:  271:        {
+    #####:  272:          mark_as_not_fast_regexp();
+    #####:  273:          $$ = yr_re_node_create(RE_NODE_RANGE);
+    #####:  274:          destroy_node_if($$ == NULL, $1);
+    #####:  275:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+    #####:  276:          yr_re_node_append_child($$, $1);
+        -:  277:        }
+        -:  278:
+    #####:  279:        $$->start = 0;
+    #####:  280:        $$->end = 1;
+    #####:  281:        $$->greedy = false;
+        -:  282:      }
+        -:  283:    | single _RANGE_
+        -:  284:      {
+    #####:  285:        RE_AST* re_ast = yyget_extra(yyscanner);
+    #####:  286:        re_ast->flags |= RE_FLAGS_GREEDY;
+        -:  287:
+    #####:  288:        if ($1->type == RE_NODE_ANY)
+        -:  289:        {
+    #####:  290:          $$ = yr_re_node_create(RE_NODE_RANGE_ANY);
+    #####:  291:          destroy_node_if(true, $1);
+    #####:  292:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  293:        }
+        -:  294:        else
+        -:  295:        {
+    #####:  296:          mark_as_not_fast_regexp();
+    #####:  297:          $$ = yr_re_node_create(RE_NODE_RANGE);
+    #####:  298:          destroy_node_if($$ == NULL, $1);
+    #####:  299:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+    #####:  300:          yr_re_node_append_child($$, $1);
+        -:  301:        }
+        -:  302:
+    #####:  303:        $$->start = $2 & 0xFFFF;;
+    #####:  304:        $$->end = $2 >> 16;;
+        -:  305:      }
+        -:  306:    | single _RANGE_ '?'
+        -:  307:      {
+    #####:  308:        RE_AST* re_ast = yyget_extra(yyscanner);
+    #####:  309:        re_ast->flags |= RE_FLAGS_UNGREEDY;
+        -:  310:
+    #####:  311:        if ($1->type == RE_NODE_ANY)
+        -:  312:        {
+    #####:  313:          $$ = yr_re_node_create(RE_NODE_RANGE_ANY);
+    #####:  314:          destroy_node_if(true, $1);
+    #####:  315:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  316:        }
+        -:  317:        else
+        -:  318:        {
+    #####:  319:          mark_as_not_fast_regexp();
+    #####:  320:          $$ = yr_re_node_create(RE_NODE_RANGE);
+    #####:  321:          destroy_node_if($$ == NULL, $1);
+    #####:  322:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+    #####:  323:          yr_re_node_append_child($$, $1);
+        -:  324:        }
+        -:  325:
+    #####:  326:        $$->start = $2 & 0xFFFF;;
+    #####:  327:        $$->end = $2 >> 16;;
+    #####:  328:        $$->greedy = false;
+        -:  329:      }
+        -:  330:    | single
+        -:  331:      {
+    #####:  332:        $$ = $1;
+        -:  333:      }
+        -:  334:    | _WORD_BOUNDARY_
+        -:  335:      {
+    #####:  336:        $$ = yr_re_node_create(RE_NODE_WORD_BOUNDARY);
+        -:  337:
+    #####:  338:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  339:      }
+        -:  340:    | _NON_WORD_BOUNDARY_
+        -:  341:      {
+    #####:  342:        $$ = yr_re_node_create(RE_NODE_NON_WORD_BOUNDARY);
+        -:  343:
+    #####:  344:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  345:      }
+        -:  346:    | '^'
+        -:  347:      {
+    #####:  348:        $$ = yr_re_node_create(RE_NODE_ANCHOR_START);
+        -:  349:
+    #####:  350:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  351:      }
+        -:  352:    | '$'
+        -:  353:      {
+    #####:  354:        $$ = yr_re_node_create(RE_NODE_ANCHOR_END);
+        -:  355:
+    #####:  356:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  357:      }
+        -:  358:    ;
+        -:  359:
+        -:  360:single
+        -:  361:    : '(' alternative ')'
+        -:  362:      {
+    #####:  363:        $$ = $2;
+        -:  364:      }
+        -:  365:    | '.'
+        -:  366:      {
+    #####:  367:        $$ = yr_re_node_create(RE_NODE_ANY);
+        -:  368:
+    #####:  369:        $$->value = 0x00;
+    #####:  370:        $$->mask = 0x00;
+        -:  371:
+    #####:  372:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  373:      }
+        -:  374:    | _CHAR_
+        -:  375:      {
+    #####:  376:        $$ = yr_re_node_create(RE_NODE_LITERAL);
+        -:  377:
+    #####:  378:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  379:
+    #####:  380:        $$->value = $1;
+    #####:  381:        $$->mask = 0xFF;
+        -:  382:      }
+        -:  383:    | _WORD_CHAR_
+        -:  384:      {
+    #####:  385:        $$ = yr_re_node_create(RE_NODE_WORD_CHAR);
+        -:  386:
+    #####:  387:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  388:      }
+        -:  389:    | _NON_WORD_CHAR_
+        -:  390:      {
+    #####:  391:        $$ = yr_re_node_create(RE_NODE_NON_WORD_CHAR);
+        -:  392:
+    #####:  393:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  394:      }
+        -:  395:    | _SPACE_
+        -:  396:      {
+    #####:  397:        $$ = yr_re_node_create(RE_NODE_SPACE);
+        -:  398:
+    #####:  399:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  400:      }
+        -:  401:    | _NON_SPACE_
+        -:  402:      {
+    #####:  403:         $$ = yr_re_node_create(RE_NODE_NON_SPACE);
+        -:  404:
+    #####:  405:         fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  406:      }
+        -:  407:    | _DIGIT_
+        -:  408:      {
+    #####:  409:        $$ = yr_re_node_create(RE_NODE_DIGIT);
+        -:  410:
+    #####:  411:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  412:      }
+        -:  413:    | _NON_DIGIT_
+        -:  414:      {
+    #####:  415:        $$ = yr_re_node_create(RE_NODE_NON_DIGIT);
+        -:  416:
+    #####:  417:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  418:      }
+        -:  419:    | _CLASS_
+        -:  420:      {
+    #####:  421:        $$ = yr_re_node_create(RE_NODE_CLASS);
+        -:  422:
+    #####:  423:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  424:
+    #####:  425:        $$->re_class = $1;
+        -:  426:      }
+        -:  427:    ;
+        -:  428:%%

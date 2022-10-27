@@ -1,0 +1,58 @@
+        -:    0:Source:endian.c
+        -:    0:Graph:/home/workspace/libyara/endian.gcno
+        -:    0:Data:/home/workspace/libyara/endian.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2017. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <yara/endian.h>
+        -:   31:
+    #####:   32:uint16_t _yr_bswap16(uint16_t x)
+        -:   33:{
+    #####:   34:  return (x >> 8 | x << 8);
+        -:   35:}
+        -:   36:
+    #####:   37:uint32_t _yr_bswap32(uint32_t x)
+        -:   38:{
+    #####:   39:  return ((((x) & 0xff000000) >> 24) | (((x) & 0x00ff0000) >>  8) |
+    #####:   40:          (((x) & 0x0000ff00) <<  8) | (((x) & 0x000000ff) << 24));
+        -:   41:}
+        -:   42:
+    #####:   43:uint64_t _yr_bswap64(uint64_t x)
+        -:   44:{
+    #####:   45:  return ((((x) & 0xff00000000000000ull) >> 56)
+    #####:   46:        | (((x) & 0x00ff000000000000ull) >> 40)
+    #####:   47:        | (((x) & 0x0000ff0000000000ull) >> 24)
+    #####:   48:        | (((x) & 0x000000ff00000000ull) >> 8)
+    #####:   49:        | (((x) & 0x00000000ff000000ull) << 8)
+    #####:   50:        | (((x) & 0x0000000000ff0000ull) << 24)
+    #####:   51:        | (((x) & 0x000000000000ff00ull) << 40)
+    #####:   52:        | (((x) & 0x00000000000000ffull) << 56));
+        -:   53:}

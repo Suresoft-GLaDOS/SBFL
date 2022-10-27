@@ -1,0 +1,346 @@
+        -:    0:Source:hex_grammar.y
+        -:    0:Graph:/home/workspace/libyara/hex_grammar.gcno
+        -:    0:Data:/home/workspace/libyara/hex_grammar.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2013. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:%{
+        -:   31:
+        -:   32:#include <string.h>
+        -:   33:#include <limits.h>
+        -:   34:
+        -:   35:#include <yara/integers.h>
+        -:   36:#include <yara/utils.h>
+        -:   37:#include <yara/hex_lexer.h>
+        -:   38:#include <yara/limits.h>
+        -:   39:#include <yara/mem.h>
+        -:   40:#include <yara/error.h>
+        -:   41:
+        -:   42:
+        -:   43:#define STR_EXPAND(tok) #tok
+        -:   44:#define STR(tok) STR_EXPAND(tok)
+        -:   45:
+        -:   46:#define YYERROR_VERBOSE
+        -:   47:
+        -:   48:#define YYMALLOC yr_malloc
+        -:   49:#define YYFREE yr_free
+        -:   50:
+        -:   51:#define mark_as_not_fast_regexp() \
+        -:   52:    ((RE_AST*) yyget_extra(yyscanner))->flags &= ~RE_FLAGS_FAST_REGEXP
+        -:   53:
+        -:   54:#define fail_if(x, error) \
+        -:   55:    if (x) \
+        -:   56:    { \
+        -:   57:      lex_env->last_error = error; \
+        -:   58:      YYABORT; \
+        -:   59:    } \
+        -:   60:
+        -:   61:#define destroy_node_if(x, node) \
+        -:   62:    if (x) \
+        -:   63:    { \
+        -:   64:      yr_re_node_destroy(node); \
+        -:   65:    } \
+        -:   66:
+        -:   67:%}
+        -:   68:
+        -:   69:%name-prefix "hex_yy"
+        -:   70:%pure-parser
+        -:   71:
+        -:   72:%parse-param {void *yyscanner}
+        -:   73:%parse-param {HEX_LEX_ENVIRONMENT *lex_env}
+        -:   74:
+        -:   75:%lex-param {yyscan_t yyscanner}
+        -:   76:%lex-param {HEX_LEX_ENVIRONMENT *lex_env}
+        -:   77:
+        -:   78:%union {
+        -:   79:  int64_t integer;
+        -:   80:  RE_NODE *re_node;
+        -:   81:}
+        -:   82:
+        -:   83:%token <integer> _BYTE_
+        -:   84:%token <integer> _MASKED_BYTE_
+        -:   85:%token <integer> _NUMBER_
+        -:   86:
+        -:   87:%type <re_node> tokens
+        -:   88:%type <re_node> token_sequence
+        -:   89:%type <re_node> token_or_range
+        -:   90:%type <re_node> token byte
+        -:   91:%type <re_node> alternatives
+        -:   92:%type <re_node> range
+        -:   93:
+    #####:   94:%destructor { yr_re_node_destroy($$); $$ = NULL; } tokens
+    #####:   95:%destructor { yr_re_node_destroy($$); $$ = NULL; } token_sequence
+    #####:   96:%destructor { yr_re_node_destroy($$); $$ = NULL; } token_or_range
+    #####:   97:%destructor { yr_re_node_destroy($$); $$ = NULL; } token
+    #####:   98:%destructor { yr_re_node_destroy($$); $$ = NULL; } byte
+    #####:   99:%destructor { yr_re_node_destroy($$); $$ = NULL; } alternatives
+    #####:  100:%destructor { yr_re_node_destroy($$); $$ = NULL; } range
+        -:  101:
+        -:  102:%%
+        -:  103:
+        -:  104:hex_string
+        -:  105:    : '{' tokens '}'
+        -:  106:      {
+        1:  107:        RE_AST* re_ast = yyget_extra(yyscanner);
+        1:  108:        re_ast->root_node = $2;
+        -:  109:      }
+        -:  110:    ;
+        -:  111:
+        -:  112:
+        -:  113:tokens
+        -:  114:    : token
+        -:  115:      {
+    #####:  116:        $$ = $1;
+        -:  117:      }
+        -:  118:    | token token
+        -:  119:      {
+    #####:  120:        $$ = yr_re_node_create(RE_NODE_CONCAT);
+        -:  121:
+    #####:  122:        destroy_node_if($$ == NULL, $1);
+    #####:  123:        destroy_node_if($$ == NULL, $2);
+        -:  124:
+    #####:  125:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  126:
+    #####:  127:        yr_re_node_append_child($$, $1);
+    #####:  128:        yr_re_node_append_child($$, $2);
+        -:  129:      }
+        -:  130:    | token token_sequence token
+        -:  131:      {
+        1:  132:        yr_re_node_append_child($2, $3);
+        1:  133:        yr_re_node_prepend_child($2, $1);
+        -:  134:
+        1:  135:        $$ = $2;
+        -:  136:      }
+        -:  137:    ;
+        -:  138:
+        -:  139:
+        -:  140:token_sequence
+        -:  141:    : token_or_range
+        -:  142:      {
+        1:  143:        $$ = yr_re_node_create(RE_NODE_CONCAT);
+        -:  144:
+        1:  145:        destroy_node_if($$ == NULL, $1);
+        1:  146:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  147:
+        1:  148:        yr_re_node_append_child($$, $1);
+        -:  149:      }
+        -:  150:    | token_sequence token_or_range
+        -:  151:      {
+        1:  152:        yr_re_node_append_child($1, $2);
+        1:  153:        $$ = $1;
+        -:  154:      }
+        -:  155:    ;
+        -:  156:
+        -:  157:
+        -:  158:token_or_range
+        -:  159:    : token
+        -:  160:      {
+        2:  161:        $$ = $1;
+        -:  162:      }
+        -:  163:    |  range
+        -:  164:      {
+    #####:  165:        $$ = $1;
+    #####:  166:        $$->greedy = false;
+        -:  167:      }
+        -:  168:    ;
+        -:  169:
+        -:  170:
+        -:  171:token
+        -:  172:    : byte
+        -:  173:      {
+        4:  174:        $$ = $1;
+        -:  175:      }
+        -:  176:    | '('
+        -:  177:      {
+    #####:  178:        lex_env->inside_or++;
+        -:  179:      }
+        -:  180:      alternatives ')'
+        -:  181:      {
+    #####:  182:        $$ = $3;
+    #####:  183:        lex_env->inside_or--;
+        -:  184:      }
+        -:  185:    ;
+        -:  186:
+        -:  187:
+        -:  188:range
+        -:  189:    : '[' _NUMBER_ ']'
+        -:  190:      {
+    #####:  191:        if ($2 <= 0)
+        -:  192:        {
+    #####:  193:          yyerror(yyscanner, lex_env, "invalid jump length");
+    #####:  194:          YYABORT;
+        -:  195:        }
+        -:  196:
+    #####:  197:        if (lex_env->inside_or && $2 > YR_STRING_CHAINING_THRESHOLD)
+        -:  198:        {
+    #####:  199:          yyerror(yyscanner, lex_env, "jumps over "
+        -:  200:              STR(YR_STRING_CHAINING_THRESHOLD)
+        -:  201:              " now allowed inside alternation (|)");
+    #####:  202:          YYABORT;
+        -:  203:        }
+        -:  204:
+    #####:  205:        $$ = yr_re_node_create(RE_NODE_RANGE_ANY);
+        -:  206:
+    #####:  207:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  208:
+    #####:  209:        $$->start = (int) $2;
+    #####:  210:        $$->end = (int) $2;
+        -:  211:      }
+        -:  212:    | '[' _NUMBER_ '-' _NUMBER_ ']'
+        -:  213:      {
+    #####:  214:        if (lex_env->inside_or &&
+    #####:  215:            ($2 > YR_STRING_CHAINING_THRESHOLD ||
+    #####:  216:             $4 > YR_STRING_CHAINING_THRESHOLD) )
+        -:  217:        {
+    #####:  218:          yyerror(yyscanner, lex_env, "jumps over "
+        -:  219:              STR(YR_STRING_CHAINING_THRESHOLD)
+        -:  220:              " now allowed inside alternation (|)");
+        -:  221:
+    #####:  222:          YYABORT;
+        -:  223:        }
+        -:  224:
+    #####:  225:        if ($2 < 0 || $4 < 0)
+        -:  226:        {
+    #####:  227:          yyerror(yyscanner, lex_env, "invalid negative jump length");
+    #####:  228:          YYABORT;
+        -:  229:        }
+        -:  230:
+    #####:  231:        if ($2 > $4)
+        -:  232:        {
+    #####:  233:          yyerror(yyscanner, lex_env, "invalid jump range");
+    #####:  234:          YYABORT;
+        -:  235:        }
+        -:  236:
+    #####:  237:        $$ = yr_re_node_create(RE_NODE_RANGE_ANY);
+        -:  238:
+    #####:  239:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  240:
+    #####:  241:        $$->start = (int) $2;
+    #####:  242:        $$->end = (int) $4;
+        -:  243:      }
+        -:  244:    | '[' _NUMBER_ '-' ']'
+        -:  245:      {
+    #####:  246:        if (lex_env->inside_or)
+        -:  247:        {
+    #####:  248:          yyerror(yyscanner, lex_env,
+        -:  249:              "unbounded jumps not allowed inside alternation (|)");
+    #####:  250:          YYABORT;
+        -:  251:        }
+        -:  252:
+    #####:  253:        if ($2 < 0)
+        -:  254:        {
+    #####:  255:          yyerror(yyscanner, lex_env, "invalid negative jump length");
+    #####:  256:          YYABORT;
+        -:  257:        }
+        -:  258:
+    #####:  259:        $$ = yr_re_node_create(RE_NODE_RANGE_ANY);
+        -:  260:
+    #####:  261:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  262:
+    #####:  263:        $$->start = (int) $2;
+    #####:  264:        $$->end = INT_MAX;
+        -:  265:      }
+        -:  266:    | '[' '-' ']'
+        -:  267:      {
+    #####:  268:        if (lex_env->inside_or)
+        -:  269:        {
+    #####:  270:          yyerror(yyscanner, lex_env,
+        -:  271:              "unbounded jumps not allowed inside alternation (|)");
+    #####:  272:          YYABORT;
+        -:  273:        }
+        -:  274:
+    #####:  275:        $$ = yr_re_node_create(RE_NODE_RANGE_ANY);
+        -:  276:
+    #####:  277:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  278:
+    #####:  279:        $$->start = 0;
+    #####:  280:        $$->end = INT_MAX;
+        -:  281:      }
+        -:  282:    ;
+        -:  283:
+        -:  284:
+        -:  285:alternatives
+        -:  286:    : tokens
+        -:  287:      {
+    #####:  288:          $$ = $1;
+        -:  289:      }
+        -:  290:    | alternatives '|' tokens
+        -:  291:      {
+    #####:  292:        mark_as_not_fast_regexp();
+        -:  293:
+    #####:  294:        $$ = yr_re_node_create(RE_NODE_ALT);
+        -:  295:
+    #####:  296:        destroy_node_if($$ == NULL, $1);
+    #####:  297:        destroy_node_if($$ == NULL, $3);
+        -:  298:
+    #####:  299:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  300:
+    #####:  301:        yr_re_node_append_child($$, $1);
+    #####:  302:        yr_re_node_append_child($$, $3);
+        -:  303:      }
+        -:  304:    ;
+        -:  305:
+        -:  306:byte
+        -:  307:    : _BYTE_
+        -:  308:      {
+        3:  309:        $$ = yr_re_node_create(RE_NODE_LITERAL);
+        -:  310:
+        3:  311:        fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  312:
+        3:  313:        $$->value = (int) $1;
+        3:  314:        $$->mask = 0xFF;
+        -:  315:      }
+        -:  316:    | _MASKED_BYTE_
+        -:  317:      {
+        1:  318:        uint8_t mask = (uint8_t) ($1 >> 8);
+        -:  319:
+        1:  320:        if (mask == 0x00)
+        -:  321:        {
+    #####:  322:          $$ = yr_re_node_create(RE_NODE_ANY);
+        -:  323:
+    #####:  324:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  325:
+    #####:  326:          $$->value = 0x00;
+    #####:  327:          $$->mask = 0x00;
+        -:  328:        }
+        -:  329:        else
+        -:  330:        {
+        1:  331:          $$ = yr_re_node_create(RE_NODE_MASKED_LITERAL);
+        -:  332:
+        1:  333:          fail_if($$ == NULL, ERROR_INSUFFICIENT_MEMORY);
+        -:  334:
+        1:  335:          $$->value = $1 & 0xFF;
+        1:  336:          $$->mask = mask;
+        -:  337:        }
+        -:  338:      }
+        -:  339:    ;
+        -:  340:
+        -:  341:%%

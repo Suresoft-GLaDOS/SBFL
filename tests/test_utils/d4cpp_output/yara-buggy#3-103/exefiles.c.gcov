@@ -1,0 +1,431 @@
+        -:    0:Source:exefiles.c
+        -:    0:Graph:/home/workspace/libyara/exefiles.gcno
+        -:    0:Data:/home/workspace/libyara/exefiles.gcda
+        -:    0:Runs:7
+        -:    0:Programs:7
+        -:    1:/*
+        -:    2:Copyright (c) 2007-2013. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <limits.h>
+        -:   31:
+        -:   32:#include <yara/endian.h>
+        -:   33:#include <yara/pe.h>
+        -:   34:#include <yara/elf.h>
+        -:   35:#include <yara/exec.h>
+        -:   36:#include <yara/utils.h>
+        -:   37:
+        -:   38:#ifndef NULL
+        -:   39:#define NULL 0
+        -:   40:#endif
+        -:   41:
+        -:   42:#ifndef MIN
+        -:   43:#define MIN(x,y) ((x < y)?(x):(y))
+        -:   44:#endif
+        -:   45:
+        -:   46:
+    #####:   47:PIMAGE_NT_HEADERS32 yr_get_pe_header(
+        -:   48:    const uint8_t* buffer,
+        -:   49:    size_t buffer_length)
+        -:   50:{
+        -:   51:  PIMAGE_DOS_HEADER mz_header;
+        -:   52:  PIMAGE_NT_HEADERS32 pe_header;
+        -:   53:
+    #####:   54:  size_t headers_size = 0;
+        -:   55:
+    #####:   56:  if (buffer_length < sizeof(IMAGE_DOS_HEADER))
+    #####:   57:    return NULL;
+        -:   58:
+    #####:   59:  mz_header = (PIMAGE_DOS_HEADER) buffer;
+        -:   60:
+    #####:   61:  if (yr_le16toh(mz_header->e_magic) != IMAGE_DOS_SIGNATURE)
+    #####:   62:    return NULL;
+        -:   63:
+    #####:   64:  if ((int32_t) yr_le32toh(mz_header->e_lfanew) < 0)
+    #####:   65:    return NULL;
+        -:   66:
+    #####:   67:  headers_size = yr_le32toh(mz_header->e_lfanew) + \
+        -:   68:                 sizeof(pe_header->Signature) + \
+        -:   69:                 sizeof(IMAGE_FILE_HEADER);
+        -:   70:
+    #####:   71:  if (buffer_length < headers_size)
+    #####:   72:    return NULL;
+        -:   73:
+    #####:   74:  pe_header = (PIMAGE_NT_HEADERS32) (buffer + yr_le32toh(mz_header->e_lfanew));
+        -:   75:
+    #####:   76:  headers_size += sizeof(IMAGE_OPTIONAL_HEADER32);
+        -:   77:
+    #####:   78:  if (yr_le32toh(pe_header->Signature) == IMAGE_NT_SIGNATURE &&
+    #####:   79:      (yr_le16toh(pe_header->FileHeader.Machine) == IMAGE_FILE_MACHINE_I386 ||
+    #####:   80:       yr_le16toh(pe_header->FileHeader.Machine) == IMAGE_FILE_MACHINE_AMD64) &&
+        -:   81:      buffer_length > headers_size)
+        -:   82:  {
+    #####:   83:    return pe_header;
+        -:   84:  }
+        -:   85:  else
+        -:   86:  {
+    #####:   87:    return NULL;
+        -:   88:  }
+        -:   89:}
+        -:   90:
+        -:   91:
+    #####:   92:uint64_t yr_pe_rva_to_offset(
+        -:   93:    PIMAGE_NT_HEADERS32 pe_header,
+        -:   94:    uint64_t rva,
+        -:   95:    size_t buffer_length)
+        -:   96:{
+    #####:   97:  int i = 0;
+        -:   98:  PIMAGE_SECTION_HEADER section;
+        -:   99:  DWORD section_rva;
+        -:  100:  DWORD section_offset;
+        -:  101:
+    #####:  102:  section = IMAGE_FIRST_SECTION(pe_header);
+    #####:  103:  section_rva = 0;
+    #####:  104:  section_offset = 0;
+        -:  105:
+    #####:  106:  while(i < MIN(yr_le16toh(pe_header->FileHeader.NumberOfSections), 60))
+        -:  107:  {
+    #####:  108:    if ((uint8_t*) section - \
+    #####:  109:        (uint8_t*) pe_header + sizeof(IMAGE_SECTION_HEADER) < buffer_length)
+        -:  110:    {
+    #####:  111:      if (rva >= section->VirtualAddress &&
+    #####:  112:          section_rva <= yr_le32toh(section->VirtualAddress))
+        -:  113:      {
+    #####:  114:        section_rva = yr_le32toh(section->VirtualAddress);
+    #####:  115:        section_offset = yr_le32toh(section->PointerToRawData);
+        -:  116:      }
+        -:  117:
+    #####:  118:      section++;
+    #####:  119:      i++;
+        -:  120:    }
+        -:  121:    else
+        -:  122:    {
+    #####:  123:      return 0;
+        -:  124:    }
+        -:  125:  }
+        -:  126:
+    #####:  127:  return section_offset + (rva - section_rva);
+        -:  128:}
+        -:  129:
+        -:  130:
+    #####:  131:int yr_get_elf_type(
+        -:  132:    const uint8_t* buffer,
+        -:  133:    size_t buffer_length)
+        -:  134:{
+        -:  135:  elf_ident_t* elf_ident;
+        -:  136:
+    #####:  137:  if (buffer_length < sizeof(elf_ident_t))
+    #####:  138:    return 0;
+        -:  139:
+    #####:  140:  elf_ident = (elf_ident_t*) buffer;
+        -:  141:
+    #####:  142:  if (yr_le32toh(elf_ident->magic) != ELF_MAGIC)
+        -:  143:  {
+    #####:  144:    return 0;
+        -:  145:  }
+        -:  146:
+    #####:  147:  switch (elf_ident->_class) {
+    #####:  148:    case ELF_CLASS_32:
+    #####:  149:      if (buffer_length < sizeof(elf32_header_t))
+        -:  150:      {
+    #####:  151:        return 0;
+        -:  152:      }
+    #####:  153:      break;
+    #####:  154:    case ELF_CLASS_64:
+    #####:  155:      if (buffer_length < sizeof(elf64_header_t))
+        -:  156:      {
+    #####:  157:        return 0;
+        -:  158:      }
+    #####:  159:      break;
+    #####:  160:    default:
+        -:  161:      /* Unexpected class */
+    #####:  162:      return 0;
+        -:  163:  }
+        -:  164:
+    #####:  165:  return elf_ident->_class;
+        -:  166:}
+        -:  167:
+        -:  168:
+    #####:  169:static uint64_t yr_elf_rva_to_offset_32(
+        -:  170:    elf32_header_t* elf_header,
+        -:  171:    uint64_t rva,
+        -:  172:    size_t buffer_length)
+        -:  173:{
+        -:  174:  // if the binary is an executable then prefer the program headers to resolve
+        -:  175:  // the offset
+    #####:  176:  if (yr_le16toh(elf_header->type) == ELF_ET_EXEC)
+        -:  177:  {
+        -:  178:    int i;
+        -:  179:    elf32_program_header_t* program;
+    #####:  180:    if (yr_le32toh(elf_header->ph_offset) == 0 ||
+    #####:  181:        yr_le16toh(elf_header->ph_entry_count == 0))
+    #####:  182:      return 0;
+        -:  183:
+        -:  184:    // check to prevent integer wraps
+    #####:  185:    if (ULONG_MAX - yr_le16toh(elf_header->ph_entry_count) <
+    #####:  186:     sizeof(elf32_program_header_t) * yr_le16toh(elf_header->ph_entry_count))
+    #####:  187:      return 0;
+        -:  188:
+        -:  189:    // check that 'ph_offset' doesn't wrap when added to the
+        -:  190:    // size of entries.
+    #####:  191:    if(ULONG_MAX - yr_le32toh(elf_header->ph_offset) <
+    #####:  192:     sizeof(elf32_program_header_t) * yr_le16toh(elf_header->ph_entry_count))
+    #####:  193:      return 0;
+        -:  194:
+        -:  195:    // ensure we don't exceed the buffer size
+    #####:  196:    if (yr_le32toh(elf_header->ph_offset) + sizeof(elf32_program_header_t) *
+    #####:  197:        yr_le16toh(elf_header->ph_entry_count) > buffer_length)
+    #####:  198:      return 0;
+        -:  199:
+    #####:  200:    program = (elf32_program_header_t*)
+    #####:  201:      ((uint8_t*) elf_header + yr_le32toh(elf_header->ph_offset));
+        -:  202:
+    #####:  203:    for (i = 0; i < yr_le16toh(elf_header->ph_entry_count); i++)
+        -:  204:    {
+    #####:  205:      if (rva >= yr_le32toh(program->virt_addr) &&
+    #####:  206:          rva <  yr_le32toh(program->virt_addr) + yr_le32toh(program->mem_size))
+        -:  207:      {
+    #####:  208:        return yr_le32toh(program->offset) + (rva - yr_le32toh(program->virt_addr));
+        -:  209:      }
+        -:  210:
+    #####:  211:      program++;
+        -:  212:    }
+        -:  213:  }
+        -:  214:  else
+        -:  215:  {
+        -:  216:    int i;
+        -:  217:    elf32_section_header_t* section;
+        -:  218:
+    #####:  219:    if (yr_le32toh(elf_header->sh_offset) == 0 ||
+    #####:  220:        yr_le16toh(elf_header->sh_entry_count == 0))
+    #####:  221:      return 0;
+        -:  222:
+        -:  223:    // check to prevent integer wraps
+        -:  224:
+    #####:  225:    if (ULONG_MAX - yr_le16toh(elf_header->sh_entry_count) <
+    #####:  226:     sizeof(elf32_section_header_t) * yr_le16toh(elf_header->sh_entry_count))
+    #####:  227:      return 0;
+        -:  228:
+        -:  229:    // check that 'sh_offset' doesn't wrap when added to the
+        -:  230:    // size of entries.
+        -:  231:
+    #####:  232:    if (ULONG_MAX - yr_le32toh(elf_header->sh_offset) <
+    #####:  233:     sizeof(elf32_section_header_t) * yr_le16toh(elf_header->sh_entry_count))
+    #####:  234:      return 0;
+        -:  235:
+    #####:  236:    if (yr_le32toh(elf_header->sh_offset) + sizeof(elf32_section_header_t) *
+    #####:  237:     yr_le16toh(elf_header->sh_entry_count) > buffer_length)
+    #####:  238:      return 0;
+        -:  239:
+    #####:  240:    section = (elf32_section_header_t*)
+    #####:  241:      ((unsigned char*) elf_header + yr_le32toh(elf_header->sh_offset));
+        -:  242:
+    #####:  243:    for (i = 0; i < yr_le16toh(elf_header->sh_entry_count); i++)
+        -:  244:    {
+    #####:  245:      if (yr_le32toh(section->type) != ELF_SHT_NULL &&
+    #####:  246:          yr_le32toh(section->type) != ELF_SHT_NOBITS &&
+    #####:  247:          rva >= yr_le32toh(section->addr) &&
+    #####:  248:          rva <  yr_le32toh(section->addr) + yr_le32toh(section->size))
+        -:  249:      {
+        -:  250:        // prevent integer wrapping with the return value
+        -:  251:
+    #####:  252:        if (ULONG_MAX - yr_le32toh(section->offset) < (rva - yr_le32toh(section->addr)))
+    #####:  253:          return 0;
+        -:  254:        else
+    #####:  255:          return yr_le32toh(section->offset) + (rva - yr_le32toh(section->addr));
+        -:  256:      }
+        -:  257:
+    #####:  258:      section++;
+        -:  259:    }
+        -:  260:  }
+        -:  261:
+    #####:  262:  return 0;
+        -:  263:
+        -:  264:}
+        -:  265:
+        -:  266:
+    #####:  267:static uint64_t yr_elf_rva_to_offset_64(
+        -:  268:    elf64_header_t* elf_header,
+        -:  269:    uint64_t rva,
+        -:  270:    size_t buffer_length)
+        -:  271:{
+        -:  272:  // if the binary is an executable then prefer the program headers to resolve
+        -:  273:  // the offset
+    #####:  274:  if (yr_le16toh(elf_header->type) == ELF_ET_EXEC)
+        -:  275:  {
+        -:  276:    int i;
+        -:  277:    elf64_program_header_t* program;
+    #####:  278:    if (yr_le64toh(elf_header->ph_offset) == 0 ||
+    #####:  279:        yr_le16toh(elf_header->ph_entry_count == 0))
+    #####:  280:      return 0;
+        -:  281:
+        -:  282:    // check that 'ph_offset' doesn't wrap when added to the
+        -:  283:    // size of entries.
+    #####:  284:    if(ULONG_MAX - yr_le64toh(elf_header->ph_offset) <
+    #####:  285:     sizeof(elf64_program_header_t) * yr_le16toh(elf_header->ph_entry_count))
+    #####:  286:      return 0;
+        -:  287:
+        -:  288:    // ensure we don't exceed the buffer size
+    #####:  289:    if (yr_le64toh(elf_header->ph_offset) + sizeof(elf64_program_header_t) *
+    #####:  290:        yr_le16toh(elf_header->ph_entry_count) > buffer_length)
+    #####:  291:      return 0;
+        -:  292:
+    #####:  293:    program = (elf64_program_header_t*)
+    #####:  294:      ((uint8_t*) elf_header + yr_le64toh(elf_header->ph_offset));
+        -:  295:
+    #####:  296:    for (i = 0; i < yr_le16toh(elf_header->ph_entry_count); i++)
+        -:  297:    {
+    #####:  298:      if (rva >= yr_le64toh(program->virt_addr) &&
+    #####:  299:          rva <  yr_le64toh(program->virt_addr) + yr_le64toh(program->mem_size))
+        -:  300:      {
+    #####:  301:        return yr_le64toh(program->offset) + (rva - yr_le64toh(program->virt_addr));
+        -:  302:      }
+        -:  303:
+    #####:  304:      program++;
+        -:  305:    }
+        -:  306:  }
+        -:  307:  else
+        -:  308:  {
+        -:  309:    int i;
+        -:  310:    elf64_section_header_t* section;
+        -:  311:
+    #####:  312:    if (yr_le64toh(elf_header->sh_offset) == 0 ||
+    #####:  313:        yr_le16toh(elf_header->sh_entry_count) == 0)
+    #####:  314:      return 0;
+        -:  315:
+        -:  316:    // check that 'sh_offset' doesn't wrap when added to the
+        -:  317:    // size of entries.
+    #####:  318:    if(ULONG_MAX - yr_le64toh(elf_header->sh_offset) <
+    #####:  319:     sizeof(elf64_section_header_t) * yr_le16toh(elf_header->sh_entry_count))
+    #####:  320:      return 0;
+        -:  321:
+    #####:  322:    if (yr_le64toh(elf_header->sh_offset) + sizeof(elf64_section_header_t) *
+    #####:  323:        yr_le16toh(elf_header->sh_entry_count) > buffer_length)
+    #####:  324:      return 0;
+        -:  325:
+    #####:  326:    section = (elf64_section_header_t*)
+    #####:  327:      ((uint8_t*) elf_header + yr_le64toh(elf_header->sh_offset));
+        -:  328:
+    #####:  329:    for (i = 0; i < yr_le16toh(elf_header->sh_entry_count); i++)
+        -:  330:    {
+    #####:  331:      if (yr_le32toh(section->type) != ELF_SHT_NULL &&
+    #####:  332:          yr_le32toh(section->type) != ELF_SHT_NOBITS &&
+    #####:  333:          rva >= yr_le64toh(section->addr) &&
+    #####:  334:          rva <  yr_le64toh(section->addr) + yr_le64toh(section->size))
+        -:  335:      {
+    #####:  336:        return yr_le64toh(section->offset) + (rva - yr_le64toh(section->addr));
+        -:  337:      }
+        -:  338:
+    #####:  339:      section++;
+        -:  340:    }
+        -:  341:  }
+        -:  342:
+    #####:  343:  return 0;
+        -:  344:}
+        -:  345:
+        -:  346:
+    #####:  347:uint64_t yr_get_entry_point_offset(
+        -:  348:    const uint8_t* buffer,
+        -:  349:    size_t buffer_length)
+        -:  350:{
+        -:  351:  PIMAGE_NT_HEADERS32 pe_header;
+        -:  352:  elf32_header_t* elf_header32;
+        -:  353:  elf64_header_t* elf_header64;
+        -:  354:
+    #####:  355:  pe_header = yr_get_pe_header(buffer, buffer_length);
+        -:  356:
+    #####:  357:  if (pe_header != NULL)
+        -:  358:  {
+    #####:  359:    return yr_pe_rva_to_offset(
+        -:  360:        pe_header,
+    #####:  361:        yr_le32toh(pe_header->OptionalHeader.AddressOfEntryPoint),
+    #####:  362:        buffer_length - ((uint8_t*) pe_header - buffer));
+        -:  363:  }
+        -:  364:
+    #####:  365:  switch(yr_get_elf_type(buffer, buffer_length))
+        -:  366:  {
+    #####:  367:    case ELF_CLASS_32:
+    #####:  368:      elf_header32 = (elf32_header_t*) buffer;
+    #####:  369:      return yr_elf_rva_to_offset_32(
+        -:  370:          elf_header32,
+    #####:  371:          yr_le32toh(elf_header32->entry),
+        -:  372:          buffer_length);
+        -:  373:
+    #####:  374:    case ELF_CLASS_64:
+    #####:  375:      elf_header64 = (elf64_header_t*) buffer;
+    #####:  376:      return yr_elf_rva_to_offset_64(
+        -:  377:          elf_header64,
+        -:  378:          yr_le64toh(elf_header64->entry),
+        -:  379:          buffer_length);
+        -:  380:  }
+        -:  381:
+    #####:  382:  return UNDEFINED;
+        -:  383:}
+        -:  384:
+        -:  385:
+    #####:  386:uint64_t yr_get_entry_point_address(
+        -:  387:    const uint8_t* buffer,
+        -:  388:    size_t buffer_length,
+        -:  389:    uint64_t base_address)
+        -:  390:{
+        -:  391:  PIMAGE_NT_HEADERS32 pe_header;
+        -:  392:
+        -:  393:  elf32_header_t* elf_header32;
+        -:  394:  elf64_header_t* elf_header64;
+        -:  395:
+    #####:  396:  pe_header = yr_get_pe_header(buffer, buffer_length);
+        -:  397:
+        -:  398:  // If file is PE but not a DLL.
+        -:  399:
+    #####:  400:  if (pe_header != NULL &&
+    #####:  401:      !(pe_header->FileHeader.Characteristics & IMAGE_FILE_DLL))
+    #####:  402:    return base_address + pe_header->OptionalHeader.AddressOfEntryPoint;
+        -:  403:
+        -:  404:  // If file is executable ELF, not shared library.
+        -:  405:
+    #####:  406:  switch(yr_get_elf_type(buffer, buffer_length))
+        -:  407:  {
+    #####:  408:    case ELF_CLASS_32:
+    #####:  409:      elf_header32 = (elf32_header_t*) buffer;
+        -:  410:
+    #####:  411:      if (elf_header32->type == ELF_ET_EXEC)
+    #####:  412:        return elf_header32->entry;
+        -:  413:
+    #####:  414:      break;
+        -:  415:
+    #####:  416:    case ELF_CLASS_64:
+    #####:  417:      elf_header64 = (elf64_header_t*) buffer;
+        -:  418:
+    #####:  419:      if (elf_header64->type == ELF_ET_EXEC)
+    #####:  420:        return elf_header64->entry;
+        -:  421:
+    #####:  422:      break;
+        -:  423:  }
+        -:  424:
+    #####:  425:  return UNDEFINED;
+        -:  426:}

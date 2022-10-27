@@ -1,0 +1,173 @@
+        -:    0:Source:mem.c
+        -:    0:Graph:/home/workspace/libyara/mem.gcno
+        -:    0:Data:/home/workspace/libyara/mem.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2007-2013. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <yara/mem.h>
+        -:   31:#include <yara/error.h>
+        -:   32:
+        -:   33:#if defined(_WIN32) || defined(__CYGWIN__)
+        -:   34:
+        -:   35:#include <windows.h>
+        -:   36:#include <string.h>
+        -:   37:
+        -:   38:static HANDLE hHeap;
+        -:   39:
+        -:   40:int yr_heap_alloc(void)
+        -:   41:{
+        -:   42:  hHeap = HeapCreate(0, 0x8000, 0);
+        -:   43:
+        -:   44:  if (hHeap == NULL)
+        -:   45:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:   46:
+        -:   47:  return ERROR_SUCCESS;
+        -:   48:}
+        -:   49:
+        -:   50:
+        -:   51:int yr_heap_free(void)
+        -:   52:{
+        -:   53:  if (HeapDestroy(hHeap))
+        -:   54:    return ERROR_SUCCESS;
+        -:   55:  else
+        -:   56:    return ERROR_INTERNAL_FATAL_ERROR;
+        -:   57:}
+        -:   58:
+        -:   59:
+        -:   60:void* yr_calloc(size_t count, size_t size)
+        -:   61:{
+        -:   62:  return (void*) HeapAlloc(hHeap, HEAP_ZERO_MEMORY, count * size);
+        -:   63:}
+        -:   64:
+        -:   65:
+        -:   66:void* yr_malloc(size_t size)
+        -:   67:{
+        -:   68:  return (void*) HeapAlloc(hHeap, HEAP_ZERO_MEMORY, size);
+        -:   69:}
+        -:   70:
+        -:   71:
+        -:   72:void* yr_realloc(void* ptr, size_t size)
+        -:   73:{
+        -:   74:  return (void*) HeapReAlloc(hHeap, HEAP_ZERO_MEMORY, ptr, size);
+        -:   75:}
+        -:   76:
+        -:   77:
+        -:   78:void yr_free(void* ptr)
+        -:   79:{
+        -:   80:  HeapFree(hHeap, 0, ptr);
+        -:   81:}
+        -:   82:
+        -:   83:
+        -:   84:char* yr_strdup(const char *str)
+        -:   85:{
+        -:   86:  size_t len = strlen(str);
+        -:   87:  char *dup = (char*) yr_malloc(len + 1);
+        -:   88:
+        -:   89:  if (dup == NULL)
+        -:   90:    return NULL;
+        -:   91:
+        -:   92:  memcpy(dup, str, len);
+        -:   93:  dup[len] = '\0';
+        -:   94:
+        -:   95:  return (char*) dup;
+        -:   96:}
+        -:   97:
+        -:   98:
+        -:   99:char* yr_strndup(const char *str, size_t n)
+        -:  100:{
+        -:  101:  size_t len = strnlen(str, n);
+        -:  102:  char *dup = (char*) yr_malloc(len + 1);
+        -:  103:
+        -:  104:  if (dup == NULL)
+        -:  105:    return NULL;
+        -:  106:
+        -:  107:  memcpy(dup, str, len);
+        -:  108:  dup[len] = '\0';
+        -:  109:
+        -:  110:  return (char *) dup;
+        -:  111:}
+        -:  112:
+        -:  113:#else
+        -:  114:
+        -:  115:#define _GNU_SOURCE
+        -:  116:
+        -:  117:#include <stdlib.h>
+        -:  118:#include <string.h>
+        -:  119:#include <stdio.h>
+        -:  120:
+        6:  121:int yr_heap_alloc(void)
+        -:  122:{
+        6:  123:  return ERROR_SUCCESS;
+        -:  124:}
+        -:  125:
+        -:  126:
+        4:  127:int yr_heap_free(void)
+        -:  128:{
+        4:  129:  return ERROR_SUCCESS;
+        -:  130:}
+        -:  131:
+        -:  132:
+    #####:  133:void* yr_calloc(size_t count, size_t size)
+        -:  134:{
+    #####:  135:  return calloc(count, size);
+        -:  136:}
+        -:  137:
+        -:  138:
+       17:  139:void* yr_malloc(size_t size)
+        -:  140:{
+       17:  141:  return malloc(size);
+        -:  142:}
+        -:  143:
+        -:  144:
+    #####:  145:void* yr_realloc(void* ptr, size_t size)
+        -:  146:{
+    #####:  147:  return realloc(ptr, size);
+        -:  148:}
+        -:  149:
+        -:  150:
+       17:  151:void yr_free(void *ptr)
+        -:  152:{
+       17:  153:  free(ptr);
+       17:  154:}
+        -:  155:
+        -:  156:
+    #####:  157:char* yr_strdup(const char *str)
+        -:  158:{
+    #####:  159:  return strdup(str);
+        -:  160:}
+        -:  161:
+        -:  162:
+    #####:  163:char* yr_strndup(const char *str, size_t n)
+        -:  164:{
+    #####:  165:  return strndup(str, n);
+        -:  166:}
+        -:  167:
+        -:  168:#endif

@@ -1,0 +1,672 @@
+        -:    0:Source:modules/math.c
+        -:    0:Graph:/home/workspace/libyara/modules/math.gcno
+        -:    0:Data:/home/workspace/libyara/modules/math.gcda
+        -:    0:Runs:8
+        -:    0:Programs:8
+        -:    1:/*
+        -:    2:Copyright (c) 2014-2015. The YARA Authors. All Rights Reserved.
+        -:    3:
+        -:    4:Redistribution and use in source and binary forms, with or without modification,
+        -:    5:are permitted provided that the following conditions are met:
+        -:    6:
+        -:    7:1. Redistributions of source code must retain the above copyright notice, this
+        -:    8:list of conditions and the following disclaimer.
+        -:    9:
+        -:   10:2. Redistributions in binary form must reproduce the above copyright notice,
+        -:   11:this list of conditions and the following disclaimer in the documentation and/or
+        -:   12:other materials provided with the distribution.
+        -:   13:
+        -:   14:3. Neither the name of the copyright holder nor the names of its contributors
+        -:   15:may be used to endorse or promote products derived from this software without
+        -:   16:specific prior written permission.
+        -:   17:
+        -:   18:THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+        -:   19:ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+        -:   20:WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+        -:   21:DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+        -:   22:ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+        -:   23:(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+        -:   24:LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+        -:   25:ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+        -:   26:(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+        -:   27:SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+        -:   28:*/
+        -:   29:
+        -:   30:#include <math.h>
+        -:   31:
+        -:   32:#include <yara/utils.h>
+        -:   33:#include <yara/modules.h>
+        -:   34:#include <yara/mem.h>
+        -:   35:
+        -:   36:#define MODULE_NAME math
+        -:   37:
+        -:   38:#define PI 3.141592653589793
+        -:   39:
+        -:   40:// log2 is not defined by math.h in VC++
+        -:   41:
+        -:   42:#if defined(_MSC_VER) && _MSC_VER < 1800
+        -:   43:double log2(double n)
+        -:   44:{
+        -:   45:  return log(n) / log(2.0);
+        -:   46:}
+        -:   47:#endif
+        -:   48:
+        -:   49:
+    #####:   50:define_function(string_entropy)
+        -:   51:{
+        -:   52:  size_t i;
+    #####:   53:  double entropy = 0.0;
+        -:   54:
+    #####:   55:  SIZED_STRING* s = sized_string_argument(1);
+        -:   56:
+    #####:   57:  uint32_t* data = (uint32_t*) yr_calloc(256, sizeof(uint32_t));
+        -:   58:
+    #####:   59:  if (data == NULL)
+    #####:   60:    return_float(UNDEFINED);
+        -:   61:
+    #####:   62:  for (i = 0; i < s->length; i++)
+        -:   63:  {
+    #####:   64:    uint8_t c = s->c_string[i];
+    #####:   65:    data[c] += 1;
+        -:   66:  }
+        -:   67:
+    #####:   68:  for (i = 0; i < 256; i++)
+        -:   69:  {
+    #####:   70:    if (data[i] != 0)
+        -:   71:    {
+    #####:   72:      double x = (double) (data[i]) / s->length;
+    #####:   73:      entropy -= x * log2(x);
+        -:   74:    }
+        -:   75:  }
+        -:   76:
+    #####:   77:  yr_free(data);
+    #####:   78:  return_float(entropy);
+        -:   79:}
+        -:   80:
+        -:   81:
+    #####:   82:define_function(data_entropy)
+        -:   83:{
+    #####:   84:  bool past_first_block = false;
+    #####:   85:  double entropy = 0.0;
+        -:   86:
+    #####:   87:  size_t total_len = 0;
+        -:   88:  size_t i;
+        -:   89:
+        -:   90:  uint32_t* data;
+        -:   91:
+    #####:   92:  int64_t offset = integer_argument(1);   // offset where to start
+    #####:   93:  int64_t length = integer_argument(2);   // length of bytes we want entropy on
+        -:   94:
+    #####:   95:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:   96:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:   97:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:   98:
+    #####:   99:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  100:    return_float(UNDEFINED);
+        -:  101:
+    #####:  102:  data = (uint32_t*) yr_calloc(256, sizeof(uint32_t));
+        -:  103:
+    #####:  104:  if (data == NULL)
+    #####:  105:    return_float(UNDEFINED);
+        -:  106:
+    #####:  107:  foreach_memory_block(iterator, block)
+        -:  108:  {
+    #####:  109:    if (offset >= block->base &&
+    #####:  110:        offset < block->base + block->size)
+    #####:  111:    {
+    #####:  112:      size_t data_offset = (size_t) (offset - block->base);
+    #####:  113:      size_t data_len = (size_t) yr_min(
+        -:  114:          length, (size_t) (block->size - data_offset));
+        -:  115:
+    #####:  116:      const uint8_t* block_data = block->fetch_data(block);
+        -:  117:
+    #####:  118:      if (block_data == NULL)
+        -:  119:      {
+    #####:  120:        yr_free(data);
+    #####:  121:        return_float(UNDEFINED);
+        -:  122:      }
+        -:  123:
+    #####:  124:      total_len += data_len;
+    #####:  125:      offset += data_len;
+    #####:  126:      length -= data_len;
+        -:  127:
+    #####:  128:      for (i = 0; i < data_len; i++)
+        -:  129:      {
+    #####:  130:        uint8_t c = *(block_data + data_offset + i);
+    #####:  131:        data[c] += 1;
+        -:  132:      }
+        -:  133:
+    #####:  134:      past_first_block = true;
+        -:  135:    }
+    #####:  136:    else if (past_first_block)
+        -:  137:    {
+        -:  138:      // If offset is not within current block and we already
+        -:  139:      // past the first block then the we are trying to compute
+        -:  140:      // the checksum over a range of non contiguous blocks. As
+        -:  141:      // range contains gaps of undefined data the checksum is
+        -:  142:      // undefined.
+        -:  143:
+    #####:  144:      yr_free(data);
+    #####:  145:      return_float(UNDEFINED);
+        -:  146:    }
+        -:  147:
+    #####:  148:    if (block->base + block->size > offset + length)
+    #####:  149:      break;
+        -:  150:  }
+        -:  151:
+    #####:  152:  if (!past_first_block)
+        -:  153:  {
+    #####:  154:    yr_free(data);
+    #####:  155:    return_float(UNDEFINED);
+        -:  156:  }
+        -:  157:
+    #####:  158:  for (i = 0; i < 256; i++)
+        -:  159:  {
+    #####:  160:    if (data[i] != 0)
+        -:  161:    {
+    #####:  162:      double x = (double) (data[i]) / total_len;
+    #####:  163:      entropy -= x * log2(x);
+        -:  164:    }
+        -:  165:  }
+        -:  166:
+    #####:  167:  yr_free(data);
+    #####:  168:  return_float(entropy);
+        -:  169:}
+        -:  170:
+        -:  171:
+    #####:  172:define_function(string_deviation)
+        -:  173:{
+    #####:  174:  SIZED_STRING* s = sized_string_argument(1);
+        -:  175:
+    #####:  176:  double mean = float_argument(2);
+    #####:  177:  double sum = 0.0;
+        -:  178:
+        -:  179:  size_t i;
+        -:  180:
+    #####:  181:  for (i = 0; i < s->length; i++)
+    #####:  182:    sum += fabs(((double) s->c_string[i]) - mean);
+        -:  183:
+    #####:  184:  return_float(sum / s->length);
+        -:  185:}
+        -:  186:
+        -:  187:
+    #####:  188:define_function(data_deviation)
+        -:  189:{
+    #####:  190:  int past_first_block = false;
+        -:  191:
+    #####:  192:  int64_t offset = integer_argument(1);
+    #####:  193:  int64_t length = integer_argument(2);
+        -:  194:
+    #####:  195:  double mean = float_argument(3);
+    #####:  196:  double sum = 0.0;
+        -:  197:
+    #####:  198:  size_t total_len = 0;
+        -:  199:  size_t i;
+        -:  200:
+    #####:  201:  size_t data_offset = 0;
+    #####:  202:  size_t data_len = 0;
+    #####:  203:  const uint8_t* block_data = NULL;
+        -:  204:
+    #####:  205:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:  206:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:  207:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:  208:
+    #####:  209:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  210:    return_float(UNDEFINED);
+        -:  211:
+    #####:  212:  foreach_memory_block(iterator, block)
+        -:  213:  {
+    #####:  214:    if (offset >= block->base &&
+    #####:  215:        offset < block->base + block->size)
+        -:  216:    {
+    #####:  217:      data_offset = (size_t)(offset - block->base);
+    #####:  218:      data_len = (size_t)yr_min(
+        -:  219:          length, (size_t)(block->size - data_offset));
+    #####:  220:      block_data = block->fetch_data(block);
+        -:  221:
+    #####:  222:      if (block_data == NULL)
+    #####:  223:        return_float(UNDEFINED);
+        -:  224:
+    #####:  225:      total_len += data_len;
+    #####:  226:      offset += data_len;
+    #####:  227:      length -= data_len;
+        -:  228:
+    #####:  229:      for (i = 0; i < data_len; i++)
+    #####:  230:        sum += fabs(((double)* (block_data + data_offset + i)) - mean);
+        -:  231:
+    #####:  232:      past_first_block = true;
+        -:  233:    }
+    #####:  234:    else if (past_first_block)
+        -:  235:    {
+        -:  236:      // If offset is not within current block and we already
+        -:  237:      // past the first block then the we are trying to compute
+        -:  238:      // the checksum over a range of non contiguous blocks. As
+        -:  239:      // range contains gaps of undefined data the checksum is
+        -:  240:      // undefined.
+    #####:  241:      return_float(UNDEFINED);
+        -:  242:    }
+        -:  243:
+    #####:  244:    if (block->base + block->size > offset + length)
+    #####:  245:      break;
+        -:  246:  }
+        -:  247:
+    #####:  248:  if (!past_first_block)
+    #####:  249:    return_float(UNDEFINED);
+        -:  250:
+    #####:  251:  return_float(sum / total_len);
+        -:  252:}
+        -:  253:
+        -:  254:
+    #####:  255:define_function(string_mean)
+        -:  256:{
+        -:  257:  size_t i;
+    #####:  258:  double sum = 0.0;
+        -:  259:
+    #####:  260:  SIZED_STRING* s = sized_string_argument(1);
+        -:  261:
+    #####:  262:  for (i = 0; i < s->length; i++)
+    #####:  263:    sum += (double) s->c_string[i];
+        -:  264:
+    #####:  265:  return_float(sum / s->length);
+        -:  266:}
+        -:  267:
+        -:  268:
+    #####:  269:define_function(data_mean)
+        -:  270:{
+    #####:  271:  int past_first_block = false;
+    #####:  272:  double sum = 0.0;
+        -:  273:
+    #####:  274:  int64_t offset = integer_argument(1);
+    #####:  275:  int64_t length = integer_argument(2);
+        -:  276:
+    #####:  277:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:  278:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:  279:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:  280:
+    #####:  281:  size_t total_len = 0;
+        -:  282:  size_t i;
+        -:  283:
+    #####:  284:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  285:    return_float(UNDEFINED);
+        -:  286:
+    #####:  287:  foreach_memory_block(iterator, block)
+        -:  288:  {
+    #####:  289:    if (offset >= block->base &&
+    #####:  290:        offset < block->base + block->size)
+    #####:  291:    {
+    #####:  292:      size_t data_offset = (size_t) (offset - block->base);
+    #####:  293:      size_t data_len = (size_t) yr_min(
+        -:  294:          length, (size_t) (block->size - data_offset));
+        -:  295:
+    #####:  296:      const uint8_t* block_data = block->fetch_data(block);
+        -:  297:
+    #####:  298:      if (block_data == NULL)
+    #####:  299:        return_float(UNDEFINED);
+        -:  300:
+    #####:  301:      total_len += data_len;
+    #####:  302:      offset += data_len;
+    #####:  303:      length -= data_len;
+        -:  304:
+    #####:  305:      for (i = 0; i < data_len; i++)
+    #####:  306:        sum += (double)* (block_data + data_offset + i);
+        -:  307:
+    #####:  308:      past_first_block = true;
+        -:  309:    }
+    #####:  310:    else if (past_first_block)
+        -:  311:    {
+        -:  312:      // If offset is not within current block and we already
+        -:  313:      // past the first block then the we are trying to compute
+        -:  314:      // the checksum over a range of non contiguous blocks. As
+        -:  315:      // range contains gaps of undefined data the checksum is
+        -:  316:      // undefined.
+    #####:  317:      return_float(UNDEFINED);
+        -:  318:    }
+        -:  319:
+    #####:  320:    if (block->base + block->size > offset + length)
+    #####:  321:      break;
+        -:  322:  }
+        -:  323:
+    #####:  324:  if (!past_first_block)
+    #####:  325:    return_float(UNDEFINED);
+        -:  326:
+    #####:  327:  return_float(sum / total_len);
+        -:  328:}
+        -:  329:
+        -:  330:
+    #####:  331:define_function(data_serial_correlation)
+        -:  332:{
+    #####:  333:  int past_first_block = false;
+        -:  334:
+    #####:  335:  size_t total_len = 0;
+        -:  336:  size_t i;
+        -:  337:
+    #####:  338:  int64_t offset = integer_argument(1);
+    #####:  339:  int64_t length = integer_argument(2);
+        -:  340:
+    #####:  341:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:  342:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:  343:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:  344:
+    #####:  345:  double sccun = 0;
+    #####:  346:  double scclast = 0;
+    #####:  347:  double scct1 = 0;
+    #####:  348:  double scct2 = 0;
+    #####:  349:  double scct3 = 0;
+    #####:  350:  double scc = 0;
+        -:  351:
+    #####:  352:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  353:    return_float(UNDEFINED);
+        -:  354:
+    #####:  355:  foreach_memory_block(iterator, block)
+        -:  356:  {
+    #####:  357:    if (offset >= block->base &&
+    #####:  358:        offset < block->base + block->size)
+    #####:  359:    {
+    #####:  360:      size_t data_offset = (size_t)(offset - block->base);
+    #####:  361:      size_t data_len = (size_t) yr_min(
+        -:  362:          length, (size_t) (block->size - data_offset));
+        -:  363:
+    #####:  364:      const uint8_t* block_data = block->fetch_data(block);
+        -:  365:
+    #####:  366:      if (block_data == NULL)
+    #####:  367:        return_float(UNDEFINED);
+        -:  368:
+    #####:  369:      total_len += data_len;
+    #####:  370:      offset += data_len;
+    #####:  371:      length -= data_len;
+        -:  372:
+    #####:  373:      for (i = 0; i < data_len; i++)
+        -:  374:      {
+    #####:  375:        sccun = (double)* (block_data + data_offset + i);
+    #####:  376:        scct1 += scclast * sccun;
+    #####:  377:        scct2 += sccun;
+    #####:  378:        scct3 += sccun * sccun;
+    #####:  379:        scclast = sccun;
+        -:  380:      }
+        -:  381:
+    #####:  382:      past_first_block = true;
+        -:  383:    }
+    #####:  384:    else if (past_first_block)
+        -:  385:    {
+        -:  386:      // If offset is not within current block and we already
+        -:  387:      // past the first block then the we are trying to compute
+        -:  388:      // the checksum over a range of non contiguous blocks. As
+        -:  389:      // range contains gaps of undefined data the checksum is
+        -:  390:      // undefined.
+    #####:  391:      return_float(UNDEFINED);
+        -:  392:    }
+        -:  393:
+    #####:  394:    if (block->base + block->size > offset + length)
+    #####:  395:      break;
+        -:  396:  }
+        -:  397:
+    #####:  398:  if (!past_first_block)
+    #####:  399:    return_float(UNDEFINED);
+        -:  400:
+    #####:  401:  scct1 += scclast * sccun;
+    #####:  402:  scct2 *= scct2;
+        -:  403:
+    #####:  404:  scc = total_len * scct3 - scct2;
+        -:  405:
+    #####:  406:  if (scc == 0)
+    #####:  407:    scc = -100000;
+        -:  408:  else
+    #####:  409:    scc = (total_len * scct1 - scct2) / scc;
+        -:  410:
+    #####:  411:  return_float(scc);
+        -:  412:}
+        -:  413:
+        -:  414:
+    #####:  415:define_function(string_serial_correlation)
+        -:  416:{
+    #####:  417:  SIZED_STRING* s = sized_string_argument(1);
+        -:  418:
+    #####:  419:  double sccun = 0;
+    #####:  420:  double scclast = 0;
+    #####:  421:  double scct1 = 0;
+    #####:  422:  double scct2 = 0;
+    #####:  423:  double scct3 = 0;
+    #####:  424:  double scc = 0;
+        -:  425:
+        -:  426:  size_t i;
+        -:  427:
+    #####:  428:  for (i = 0; i < s->length; i++)
+        -:  429:  {
+    #####:  430:    sccun = (double) s->c_string[i];
+    #####:  431:    scct1 += scclast * sccun;
+    #####:  432:    scct2 += sccun;
+    #####:  433:    scct3 += sccun * sccun;
+    #####:  434:    scclast = sccun;
+        -:  435:  }
+        -:  436:
+    #####:  437:  scct1 += scclast * sccun;
+    #####:  438:  scct2 *= scct2;
+        -:  439:
+    #####:  440:  scc = s->length * scct3 - scct2;
+        -:  441:
+    #####:  442:  if (scc == 0)
+    #####:  443:    scc = -100000;
+        -:  444:  else
+    #####:  445:    scc = (s->length * scct1 - scct2) / scc;
+        -:  446:
+    #####:  447:  return_float(scc);
+        -:  448:}
+        -:  449:
+        -:  450:
+    #####:  451:define_function(data_monte_carlo_pi)
+        -:  452:{
+    #####:  453:  int past_first_block = false;
+    #####:  454:  int mcount = 0;
+    #####:  455:  int inmont = 0;
+        -:  456:
+    #####:  457:  double INCIRC = pow(pow(256.0, 3.0) - 1, 2.0);
+    #####:  458:  double mpi = 0;
+        -:  459:
+        -:  460:  size_t i;
+        -:  461:
+    #####:  462:  int64_t offset = integer_argument(1);
+    #####:  463:  int64_t length = integer_argument(2);
+        -:  464:
+    #####:  465:  YR_SCAN_CONTEXT* context = scan_context();
+    #####:  466:  YR_MEMORY_BLOCK* block = first_memory_block(context);
+    #####:  467:  YR_MEMORY_BLOCK_ITERATOR* iterator = context->iterator;
+        -:  468:
+    #####:  469:  if (offset < 0 || length < 0 || offset < block->base)
+    #####:  470:    return_float(UNDEFINED);
+        -:  471:
+    #####:  472:  foreach_memory_block(iterator, block)
+        -:  473:  {
+    #####:  474:    if (offset >= block->base &&
+    #####:  475:        offset < block->base + block->size)
+    #####:  476:    {
+        -:  477:      unsigned int monte[6];
+        -:  478:
+    #####:  479:      size_t data_offset = (size_t) (offset - block->base);
+    #####:  480:      size_t data_len = (size_t) yr_min(
+        -:  481:          length, (size_t) (block->size - data_offset));
+        -:  482:
+    #####:  483:      const uint8_t* block_data = block->fetch_data(block);
+        -:  484:
+    #####:  485:      if (block_data == NULL)
+    #####:  486:        return_float(UNDEFINED);
+        -:  487:
+    #####:  488:      offset += data_len;
+    #####:  489:      length -= data_len;
+        -:  490:
+    #####:  491:      for (i = 0; i < data_len; i++)
+        -:  492:      {
+    #####:  493:        monte[i % 6] = (unsigned int)* (block_data + data_offset + i);
+        -:  494:
+    #####:  495:        if (i % 6 == 5)
+        -:  496:        {
+    #####:  497:          double mx = 0;
+    #####:  498:          double my = 0;
+        -:  499:          int j;
+        -:  500:
+    #####:  501:          mcount++;
+        -:  502:
+    #####:  503:          for (j = 0; j < 3; j++)
+        -:  504:          {
+    #####:  505:            mx = (mx * 256.0) + monte[j];
+    #####:  506:            my = (my * 256.0) + monte[j + 3];
+        -:  507:          }
+        -:  508:
+    #####:  509:          if ((mx * mx + my * my) <= INCIRC)
+    #####:  510:            inmont++;
+        -:  511:        }
+        -:  512:      }
+        -:  513:
+    #####:  514:      past_first_block = true;
+        -:  515:    }
+    #####:  516:    else if (past_first_block)
+        -:  517:    {
+        -:  518:      // If offset is not within current block and we already
+        -:  519:      // past the first block then the we are trying to compute
+        -:  520:      // the checksum over a range of non contiguous blocks. As
+        -:  521:      // range contains gaps of undefined data the checksum is
+        -:  522:      // undefined.
+    #####:  523:      return_float(UNDEFINED);
+        -:  524:    }
+        -:  525:
+    #####:  526:    if (block->base + block->size > offset + length)
+    #####:  527:      break;
+        -:  528:  }
+        -:  529:
+    #####:  530:  if (!past_first_block || mcount == 0)
+    #####:  531:    return_float(UNDEFINED);
+        -:  532:
+    #####:  533:  mpi = 4.0 * ((double) inmont / mcount);
+        -:  534:
+    #####:  535:  return_float(fabs((mpi - PI) / PI));
+        -:  536:}
+        -:  537:
+        -:  538:
+    #####:  539:define_function(string_monte_carlo_pi)
+        -:  540:{
+    #####:  541:  SIZED_STRING* s = sized_string_argument(1);
+        -:  542:
+    #####:  543:  double INCIRC = pow(pow(256.0, 3.0) - 1, 2.0);
+    #####:  544:  double mpi = 0;
+        -:  545:
+        -:  546:  unsigned int monte[6];
+        -:  547:
+    #####:  548:  int mcount = 0;
+    #####:  549:  int inmont = 0;
+        -:  550:
+        -:  551:  size_t i;
+        -:  552:
+    #####:  553:  for (i = 0; i < s->length; i++)
+        -:  554:  {
+    #####:  555:    monte[i % 6] = (unsigned int) s->c_string[i];
+        -:  556:
+    #####:  557:    if (i % 6 == 5)
+        -:  558:    {
+    #####:  559:      double mx = 0;
+    #####:  560:      double my = 0;
+        -:  561:
+        -:  562:      int j;
+        -:  563:
+    #####:  564:      mcount++;
+        -:  565:
+    #####:  566:      for (j = 0; j < 3; j++)
+        -:  567:      {
+    #####:  568:        mx = (mx * 256.0) + monte[j];
+    #####:  569:        my = (my * 256.0) + monte[j + 3];
+        -:  570:      }
+        -:  571:
+    #####:  572:      if ((mx * mx + my * my) <= INCIRC)
+    #####:  573:        inmont++;
+        -:  574:    }
+        -:  575:  }
+        -:  576:
+    #####:  577:  if (mcount == 0)
+    #####:  578:    return_float(UNDEFINED);
+        -:  579:
+    #####:  580:  mpi = 4.0 * ((double) inmont / mcount);
+    #####:  581:  return_float(fabs((mpi - PI) / PI));
+        -:  582:}
+        -:  583:
+        -:  584:
+    #####:  585:define_function(in_range)
+        -:  586:{
+    #####:  587:  double test = float_argument(1);
+    #####:  588:  double lower = float_argument(2);
+    #####:  589:  double upper = float_argument(3);
+        -:  590:
+    #####:  591:  return_integer((lower <= test && test <= upper) ? 1 : 0);
+        -:  592:}
+        -:  593:
+        -:  594:
+        -:  595:// Undefine existing "min" and "max" macros in order to avoid conflicts with
+        -:  596:// function names.
+        -:  597:#undef min
+        -:  598:#undef max
+        -:  599:
+    #####:  600:define_function(min)
+        -:  601:{
+    #####:  602:  uint64_t i = integer_argument(1);
+    #####:  603:  uint64_t j = integer_argument(2);
+        -:  604:
+    #####:  605:  return_integer(i < j ? i : j);
+        -:  606:}
+        -:  607:
+        -:  608:
+    #####:  609:define_function(max)
+        -:  610:{
+    #####:  611:  uint64_t i = integer_argument(1);
+    #####:  612:  uint64_t j = integer_argument(2);
+        -:  613:
+    #####:  614:  return_integer(i > j ? i : j);
+        -:  615:}
+        -:  616:
+        -:  617:
+    #####:  618:begin_declarations;
+        -:  619:
+    #####:  620:  declare_float("MEAN_BYTES");
+    #####:  621:  declare_function("in_range", "fff", "i", in_range);
+    #####:  622:  declare_function("deviation", "iif", "f", data_deviation);
+    #####:  623:  declare_function("deviation", "sf", "f", string_deviation);
+    #####:  624:  declare_function("mean", "ii", "f", data_mean);
+    #####:  625:  declare_function("mean", "s", "f", string_mean);
+    #####:  626:  declare_function("serial_correlation", "ii", "f", data_serial_correlation);
+    #####:  627:  declare_function("serial_correlation", "s", "f", string_serial_correlation);
+    #####:  628:  declare_function("monte_carlo_pi", "ii", "f", data_monte_carlo_pi);
+    #####:  629:  declare_function("monte_carlo_pi", "s", "f", string_monte_carlo_pi);
+    #####:  630:  declare_function("entropy", "ii", "f", data_entropy);
+    #####:  631:  declare_function("entropy", "s", "f", string_entropy);
+    #####:  632:  declare_function("min", "ii", "i", min);
+    #####:  633:  declare_function("max", "ii", "i", max);
+        -:  634:
+    #####:  635:end_declarations;
+        -:  636:
+        -:  637:
+        6:  638:int module_initialize(
+        -:  639:    YR_MODULE* module)
+        -:  640:{
+        6:  641:  return ERROR_SUCCESS;
+        -:  642:}
+        -:  643:
+        -:  644:
+        4:  645:int module_finalize(
+        -:  646:    YR_MODULE* module)
+        -:  647:{
+        4:  648:  return ERROR_SUCCESS;
+        -:  649:}
+        -:  650:
+        -:  651:
+    #####:  652:int module_load(
+        -:  653:    YR_SCAN_CONTEXT* context,
+        -:  654:    YR_OBJECT* module_object,
+        -:  655:    void* module_data,
+        -:  656:    size_t module_data_size)
+        -:  657:{
+    #####:  658:  set_float(127.5, module_object, "MEAN_BYTES");
+    #####:  659:  return ERROR_SUCCESS;
+        -:  660:}
+        -:  661:
+        -:  662:
+    #####:  663:int module_unload(
+        -:  664:    YR_OBJECT* module_object)
+        -:  665:{
+    #####:  666:  return ERROR_SUCCESS;
+        -:  667:}
