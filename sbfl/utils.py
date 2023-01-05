@@ -135,7 +135,7 @@ def gcov_files_to_frame(gcov_files: dict, only_coverable=True,
             if grp is None:
                 source = src
             else:
-                source = grp + "//" + src
+                source = f"{src}({grp})"
             if source not in coverage:
                 coverage[source] = {}
 
