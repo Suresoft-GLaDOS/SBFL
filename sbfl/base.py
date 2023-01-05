@@ -37,7 +37,7 @@ class SBFL:
     def get_spectrum(self, X, y):
         """
         Convert coverage data (X) and test results (y) to program execution spectrum
- 
+
         Return: (e_p, n_p, e_f, n_f)
             - e_p: the number of passing tests that cover each elements
             - n_p: the number of passing tests that do not cover each elements
@@ -87,3 +87,48 @@ class SBFL:
             index = pd.MultiIndex.from_tuples(elements, names=names)
         return pd.DataFrame({'score': self.scores_}, index=index)
 
+class Ensemble:
+    def __init__(self, localizers=[], tiebreaker="max"):
+        assert all([isinstance(obj, SBFL) for obj in localizers])
+        self.localizers = localizers
+        self.tiebreaker = tiebreaker
+
+    def add_localizer(self, obj):
+        assert isinstance(obj, SBFL)
+        self.localizers.append(obj)
+
+    def remove_localizer(self, index):
+        del self.localizers[i]
+
+    def fit(self, X, y):
+        """Compute suspiciousness scores using each localizer"""
+        vote_list = []
+        for obj in self.localizers:
+            obj.fit(X, y)
+            vote_list.append(1/obj.ranks(method=self.tiebreaker))
+        self.scores_ = sum(vote_list)
+
+    def fit_predict(self, X, y):
+        """Compute and return suspiciousness scores"""
+        self.fit(X, y)
+        return self.scores_
+
+    def ranks(self, method='average'):
+        """
+        An array of size equals to the size of scores_, containing ranks
+
+        See https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.rankdata.html
+        for the details of ranking methods (tie-breakers).
+        """
+        return rankdata(-self.scores_, method=method)
+
+    def to_frame(self, elements=None, names=None, index=None):
+        """
+        Convert self.scores_ to a Pandas DataFrame object `df`
+
+        When `elements` is not None, it should be a list of tuples, and
+        the index of `df` is set to a MultiIndex made from the tuples.
+        """
+        if index is None and elements is not None:
+            index = pd.MultiIndex.from_tuples(elements, names=names)
+        return pd.DataFrame({'score': self.scores_}, index=index)
