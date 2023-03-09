@@ -19,6 +19,25 @@ def mean_aggregation(score_df, level, column='score'):
     level = _check_aggregation_input(score_df, level, column)
     return score_df.groupby(level=level).mean()[[column]]
 
+def max_rank_based_voting(score_df, level, column='score'):
+    """
+    The amount of vote each program component
+    (corresponding to a row in `score_df`) cast is defined by
+    the inverse of the max rank of its suspiciousness score,
+    which is stored in the column `column` of `score_df`.
+    Then, the total votes are aggregated for the program components
+    at the given `level`.
+
+    - See Section V.A.1 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
+    """
+    level = _check_aggregation_input(score_df, level, column)
+    vote_df = pd.DataFrame(
+        data=1/rankdata(-score_df[column], axis=0, method='max'),
+        index=score_df.index,
+        columns=[column]
+    )
+    return vote_df.groupby(level=level).sum()
+
 def dense_rank_based_voting(score_df, level, column='score'):
     """
     The amount of vote each program component
