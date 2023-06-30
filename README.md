@@ -2,8 +2,6 @@
 
 [![test](https://github.com/Suresoft-GLaDOS/SBFL/actions/workflows/run_tests.yml/badge.svg)](https://github.com/Suresoft-GLaDOS/SBFL/actions/workflows/run_tests.yml)
 
-⚠️ This engine is under construction.👷‍♀️
-
 ## Environment
 - Developed & tested under Python 3.9.1
 - To develop this module, set up the required dependencies:
