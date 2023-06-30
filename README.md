@@ -2,8 +2,6 @@
 
 [![test](https://github.com/Suresoft-GLaDOS/SBFL/actions/workflows/run_tests.yml/badge.svg)](https://github.com/Suresoft-GLaDOS/SBFL/actions/workflows/run_tests.yml)
 
-⚠️ This engine is under construction.👷‍♀️
-
 ## Environment
 - Developed & tested under Python 3.9.1
 - To develop this module, set up the required dependencies:
@@ -11,12 +9,16 @@
   python -m pip install -r requirements.txt
   ```
 
-## Installing the SBFL module
+## Installing the `sbfl` module
 ```bash
 git clone https://github.com/Suresoft-GLaDOS/SBFL
 cd SBFL
 python -m pip install --upgrade pip
 python -m pip install .
+```
+Or simply do:
+```bash
+pip install git+https://github.com/Suresoft-GLaDOS/SBFL.git
 ```
 
 ## Getting Started
