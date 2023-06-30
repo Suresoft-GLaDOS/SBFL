@@ -4,5 +4,4 @@ pandas
 pytest
 scikit-learn
 scipy
-sklearn
 tqdm
