@@ -6,17 +6,17 @@
 
 ## Environment
 - Developed & tested under Python 3.9.1
-- Installing dependencies:
-  ```bash
-  python -m pip install -r requirements.txt
+- To develop this module, set up the required dependencies:
+  ```
+  python -m pip install -r requirments.txt
   ```
 
-## Installation
+## Installing the SBFL module
 ```bash
 git clone https://github.com/Suresoft-GLaDOS/SBFL
 cd SBFL
-pip install setuptools
-python setup.py install
+python -m pip install --upgrade pip
+python -m pip install .
 ```
 
 ## Getting Started
