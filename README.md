@@ -8,7 +8,7 @@
 - Developed & tested under Python 3.9.1
 - To develop this module, set up the required dependencies:
   ```
-  python -m pip install -r requirments.txt
+  python -m pip install -r requirements.txt
   ```
 
 ## Installing the SBFL module
