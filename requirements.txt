@@ -1,5 +1,5 @@
 coverage
-numpy
+numpy>=1.22
 pandas
 pytest
 scikit-learn
