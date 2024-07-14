@@ -28,7 +28,7 @@ def max_rank_based_voting(score_df, level, column='score'):
     Then, the total votes are aggregated for the program components
     at the given `level`.
 
-    - See Section V.A.1 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
+    - See Section V.A.1 in https://coinse.github.io/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
     level = _check_aggregation_input(score_df, level, column)
     vote_df = pd.DataFrame(
@@ -47,7 +47,7 @@ def dense_rank_based_voting(score_df, level, column='score'):
     Then, the total votes are aggregated for the program components
     at the given `level`.
 
-    - See Section V.A.1 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
+    - See Section V.A.1 in https://coinse.github.io/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
     level = _check_aggregation_input(score_df, level, column)
     vote_df = pd.DataFrame(
@@ -67,7 +67,7 @@ def dense_rank_based_tie_aware_voting(score_df, level,
     Then, the total votes are aggregated for the program components
     at the given `level`.
 
-    - See Section V.A.2 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
+    - See Section V.A.2 in https://coinse.github.io/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
     level = _check_aggregation_input(score_df, level, column)
     vote_df = pd.DataFrame(
@@ -88,7 +88,7 @@ def min_rank_based_voting(score_df, level, column='score'):
     Then, the total votes are aggregated for the program components
     at the given `level`.
 
-    - See Section V.A.3 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
+    - See Section V.A.3 in https://coinse.github.io/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
     level = _check_aggregation_input(score_df, level, column)
     vote_df = pd.DataFrame(
@@ -107,7 +107,7 @@ def dense_rank_based_suspiciousness_aware_voting(score_df, level,
     Then, the total votes are aggregated for the program components
     at the given `level`.
 
-    - See Section V.A.4 in https://coinse.kaist.ac.kr/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
+    - See Section V.A.4 in https://coinse.github.io/publications/pdfs/Sohn2021ea.pdf for more details about this voting scheme
     """
     level = _check_aggregation_input(score_df, level, column)
     ranks = rankdata(-score_df[column], axis=0, method='dense')
